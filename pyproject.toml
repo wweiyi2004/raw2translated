@@ -39,6 +39,9 @@ dev = [
 [project.scripts]
 raw2translated = "raw2translated.cli:main"
 
+[project.gui-scripts]
+raw2translated-gui = "raw2translated.gui:launch"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
