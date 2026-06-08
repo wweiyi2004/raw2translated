@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +18,20 @@ from .models import EpisodeTranscript
 from .preprocess import build_audio_preprocessor
 from .subtitles import segments_to_ass, segments_to_srt
 from .translation import build_translation_provider
+
+DEFAULT_MEDIA_EXTENSIONS = (
+    ".mkv",
+    ".mp4",
+    ".mov",
+    ".avi",
+    ".ts",
+    ".m4v",
+    ".webm",
+    ".mka",
+    ".wav",
+    ".flac",
+    ".m4a",
+)
 
 
 @dataclass(frozen=True)
@@ -64,6 +78,60 @@ class ProcessResult:
     audio_path: Path | None
     asr_audio_path: Path | None
     translated_transcript_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class BatchItemResult:
+    input_path: Path
+    output_dir: Path
+    result: ProcessResult | None
+    error: str | None
+
+
+def discover_media(
+    input_dir: Path,
+    *,
+    extensions: tuple[str, ...] = DEFAULT_MEDIA_EXTENSIONS,
+) -> list[Path]:
+    """Return sorted media files directly under ``input_dir``."""
+    input_dir = Path(input_dir)
+    if not input_dir.is_dir():
+        raise NotADirectoryError(input_dir)
+    allowed = {ext.lower() for ext in extensions}
+    return sorted(
+        path
+        for path in input_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in allowed
+    )
+
+
+def process_batch(
+    input_dir: Path,
+    output_root: Path,
+    options: ProcessOptions,
+    *,
+    extensions: tuple[str, ...] = DEFAULT_MEDIA_EXTENSIONS,
+    continue_on_error: bool = True,
+) -> list[BatchItemResult]:
+    """Process every media file in ``input_dir`` into its own output subdirectory.
+
+    ``options.output_dir`` is used as a template; each file is written to
+    ``output_root / <file stem>``. With ``continue_on_error`` a failing file is
+    recorded and the batch keeps going instead of aborting.
+    """
+    output_root = Path(output_root)
+    items: list[BatchItemResult] = []
+    for media_path in discover_media(input_dir, extensions=extensions):
+        per_output = output_root / media_path.stem
+        per_options = replace(options, output_dir=per_output)
+        try:
+            result = process_episode(media_path, per_options)
+            items.append(BatchItemResult(media_path, per_output, result, None))
+        except Exception as exc:  # noqa: BLE001 - recorded per item
+            if not continue_on_error:
+                raise
+            items.append(BatchItemResult(media_path, per_output, None, str(exc)))
+    return items
 
 
 def process_episode(input_path: Path, options: ProcessOptions) -> ProcessResult:

@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from raw2translated.gui import GuiController
 from raw2translated.models import EpisodeTranscript, TranscriptSegment
@@ -32,6 +33,25 @@ class ControllerEditingTests(unittest.TestCase):
         self.assertEqual(rows[0].source, "おはよう")
         self.assertEqual(rows[0].translation, "")
         self.assertEqual(rows[1].notes, "untranslated")
+
+    def test_only_flagged_filters_translated_clean_lines(self) -> None:
+        # First line becomes a clean, translated line; it should drop out of the filter.
+        self.controller.update_translation(0, "早上好")
+        all_rows = self.controller.rows()
+        flagged = self.controller.rows(only_flagged=True)
+        self.assertEqual(len(all_rows), 2)
+        self.assertEqual([r.index for r in flagged], [1])
+
+    def test_low_confidence_is_flagged(self) -> None:
+        transcript = EpisodeTranscript(
+            segments=[
+                TranscriptSegment(start=0, end=1, text_ja="a", text_zh="A", asr_confidence=0.2),
+            ]
+        )
+        controller = GuiController()
+        controller.set_transcript(transcript)
+        self.assertEqual(len(controller.rows(only_flagged=True, confidence_threshold=0.5)), 1)
+        self.assertEqual(len(controller.rows(only_flagged=True, confidence_threshold=0.1)), 0)
 
     def test_update_translation_sets_text_and_clears_flag(self) -> None:
         self.controller.update_translation(1, "未收录的台词")
@@ -84,6 +104,39 @@ class ControllerExportTests(unittest.TestCase):
         # Untranslated line falls back to source; never "None".
         self.assertIn("未収録のセリフ", srt_text)
         self.assertNotIn("None", srt_text)
+
+
+class ControllerPlaybackTests(unittest.TestCase):
+    def test_build_play_command_uses_media_and_time_range(self) -> None:
+        controller = GuiController()
+        controller.set_transcript(_transcript())
+        command = controller.build_play_command(0, media_path="episode.mkv")
+        self.assertEqual(command[0], "ffplay")
+        self.assertIn("episode.mkv", command)
+        self.assertIn("-ss", command)
+        self.assertIn("-t", command)
+
+    def test_build_play_command_without_media_raises(self) -> None:
+        controller = GuiController()
+        controller.set_transcript(EpisodeTranscript(segments=[TranscriptSegment(start=0, end=1)]))
+        with self.assertRaises(ValueError):
+            controller.build_play_command(0)
+
+
+class ControllerMuxTests(unittest.TestCase):
+    def test_mux_forwards_to_ffmpeg(self) -> None:
+        controller = GuiController()
+        controller.set_transcript(_transcript())
+        with patch("raw2translated.ffmpeg.mux_subtitle", return_value=Path("out.mkv")) as mock_mux:
+            out = controller.mux(Path("ep.ass"), Path("out.mkv"), overwrite=True)
+        self.assertEqual(out, Path("out.mkv"))
+        mock_mux.assert_called_once()
+
+    def test_mux_without_media_raises(self) -> None:
+        controller = GuiController()
+        controller.set_transcript(EpisodeTranscript(media_path=None, segments=[]))
+        with self.assertRaises(ValueError):
+            controller.mux(Path("ep.ass"), Path("out.mkv"))
 
 
 class ControllerProcessTests(unittest.TestCase):
