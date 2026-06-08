@@ -34,6 +34,9 @@ models = [
 subtitle = [
   "pysubs2",
 ]
+gui = [
+  "sv-ttk",
+]
 dev = [
   "pytest",
   "ruff",
