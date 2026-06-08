@@ -42,13 +42,11 @@ def segments_to_ass(
     mode = _resolve_text_mode(text_mode, bilingual)
     for segment in segments:
         text = _render_text(segment, mode=mode)
+        start = format_ass_time(segment.start)
+        end = format_ass_time(segment.end)
+        name = _escape_ass_field(segment.display_speaker)
         lines.append(
-            "Dialogue: 0,{start},{end},Default,{name},0,0,0,,{text}".format(
-                start=format_ass_time(segment.start),
-                end=format_ass_time(segment.end),
-                name=_escape_ass_field(segment.display_speaker),
-                text=escape_ass_text(text),
-            )
+            f"Dialogue: 0,{start},{end},Default,{name},0,0,0,,{escape_ass_text(text)}"
         )
     return "\n".join(lines) + "\n"
 

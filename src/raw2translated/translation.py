@@ -96,7 +96,7 @@ class TranslationMemoryProvider:
         self.memory = dict(memory)
 
     @classmethod
-    def from_file(cls, path: Path) -> "TranslationMemoryProvider":
+    def from_file(cls, path: Path) -> TranslationMemoryProvider:
         return cls(_load_memory(path))
 
     def translate(
@@ -135,7 +135,7 @@ class GlossaryTranslationProvider:
         self.terms = dict(sorted(terms.items(), key=lambda item: len(item[0]), reverse=True))
 
     @classmethod
-    def from_file(cls, path: Path) -> "GlossaryTranslationProvider":
+    def from_file(cls, path: Path) -> GlossaryTranslationProvider:
         return cls(_load_glossary(path))
 
     def translate(

@@ -47,7 +47,7 @@ class TranscriptSegment:
         return bool(self.text_zh)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TranscriptSegment":
+    def from_dict(cls, data: dict[str, Any]) -> TranscriptSegment:
         return cls(
             start=data["start"],
             end=data["end"],
@@ -75,11 +75,11 @@ class EpisodeTranscript:
     schema_version: int = SCHEMA_VERSION
 
     @classmethod
-    def empty(cls, *, media_path: Path | None = None, language: str = "ja") -> "EpisodeTranscript":
+    def empty(cls, *, media_path: Path | None = None, language: str = "ja") -> EpisodeTranscript:
         return cls(media_path=str(media_path) if media_path else None, language=language, segments=[])
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "EpisodeTranscript":
+    def from_dict(cls, data: dict[str, Any]) -> EpisodeTranscript:
         return cls(
             media_path=data.get("media_path"),
             language=data.get("language", "ja"),
@@ -89,7 +89,7 @@ class EpisodeTranscript:
         )
 
     @classmethod
-    def from_json_file(cls, path: Path) -> "EpisodeTranscript":
+    def from_json_file(cls, path: Path) -> EpisodeTranscript:
         data = json.loads(path.read_text(encoding="utf-8"))
         return cls.from_dict(data)
 

@@ -38,7 +38,9 @@ class DiarizationProvider(Protocol):
 
 class NotConfiguredDiarizationProvider:
     def diarize(self, audio_path: Path) -> list[SpeakerTurn]:
-        raise DiarizationProviderError("No diarization provider configured. Planned provider: pyannote.audio.")
+        raise DiarizationProviderError(
+            "No diarization provider configured. Planned provider: pyannote.audio."
+        )
 
 
 class PyannoteDiarizationProvider:
@@ -53,7 +55,8 @@ class PyannoteDiarizationProvider:
             from pyannote.audio import Pipeline
         except ImportError as exc:
             raise DiarizationProviderError(
-                'pyannote.audio is not installed. Install diarization dependencies with: pip install -e ".[diarization]"'
+                "pyannote.audio is not installed. Install diarization dependencies with: "
+                'pip install -e ".[diarization]"'
             ) from exc
 
         token = self.config.token or _env_token()
@@ -177,4 +180,6 @@ def _move_pipeline_to_device(pipeline, device: str) -> None:
     try:
         pipeline.to(torch.device(device))
     except Exception as exc:
-        raise DiarizationProviderError(f"Could not move pyannote pipeline to device {device!r}: {exc}") from exc
+        raise DiarizationProviderError(
+            f"Could not move pyannote pipeline to device {device!r}: {exc}"
+        ) from exc
