@@ -210,7 +210,17 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--format", choices=["ass", "srt"], default="ass")
     export.add_argument("--out", type=Path, required=True)
     export.add_argument("--title", default="raw2translated")
-    export.add_argument("--bilingual", action="store_true", help="Render Japanese and Chinese text together.")
+    export.add_argument(
+        "--text-mode",
+        choices=["original", "translated", "bilingual"],
+        default=None,
+        help="Subtitle text: original (Japanese), translated (Chinese), or bilingual.",
+    )
+    export.add_argument(
+        "--bilingual",
+        action="store_true",
+        help="Compatibility alias for --text-mode bilingual.",
+    )
 
     mux = subparsers.add_parser("mux", help="Mux a subtitle file into a video container.")
     mux.add_argument("input", type=Path)
@@ -311,10 +321,15 @@ def _translate(args: argparse.Namespace) -> int:
 
 def _export_subtitle(args: argparse.Namespace) -> int:
     transcript = EpisodeTranscript.from_json_file(args.transcript)
+    text_mode = args.text_mode
+    if text_mode is None and args.bilingual:
+        text_mode = "bilingual"
+    if text_mode is None:
+        text_mode = "translated"
     if args.format == "ass":
-        text = segments_to_ass(transcript.segments, title=args.title, bilingual=args.bilingual)
+        text = segments_to_ass(transcript.segments, title=args.title, text_mode=text_mode)
     else:
-        text = segments_to_srt(transcript.segments, bilingual=args.bilingual)
+        text = segments_to_srt(transcript.segments, text_mode=text_mode)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(text, encoding="utf-8")
     print(args.out)
