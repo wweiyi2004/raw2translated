@@ -17,6 +17,7 @@ from .ffmpeg import extract_analysis_audio, probe_media
 from .models import EpisodeTranscript
 from .preprocess import build_audio_preprocessor
 from .subtitles import segments_to_ass, segments_to_srt
+from .translation import build_translation_provider
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,10 @@ class ProcessOptions:
     min_speakers: int | None = None
     max_speakers: int | None = None
     speaker_min_overlap: float = 0.2
+    translate_provider: str = "none"
+    translation_memory: Path | None = None
+    glossary: Path | None = None
+    target_lang: str = "zh-CN"
 
 
 @dataclass(frozen=True)
@@ -58,6 +63,7 @@ class ProcessResult:
     subtitle_srt_path: Path
     audio_path: Path | None
     asr_audio_path: Path | None
+    translated_transcript_path: Path | None = None
 
 
 def process_episode(input_path: Path, options: ProcessOptions) -> ProcessResult:
@@ -190,6 +196,26 @@ def process_episode(input_path: Path, options: ProcessOptions) -> ProcessResult:
     elif options.dry_run and options.diarization_provider != "none":
         diarization_status = "dry_run"
 
+    translation_status = "skipped"
+    translated_transcript = None
+    translated_transcript_path = None
+    if options.translate_provider != "none":
+        provider = build_translation_provider(
+            options.translate_provider,
+            memory_path=options.translation_memory,
+            glossary_path=options.glossary,
+        )
+        translated_transcript = copy.deepcopy(transcript)
+        translated_transcript.segments = provider.translate(
+            translated_transcript.segments,
+            target_lang=options.target_lang,
+        )
+        translated_transcript.metadata["translation"] = {
+            "provider": options.translate_provider,
+            "target_lang": options.target_lang,
+        }
+        translation_status = "completed" if transcript.segments else "no_segments"
+
     manifest = {
         "input": str(input_path),
         "language": options.language,
@@ -208,7 +234,16 @@ def process_episode(input_path: Path, options: ProcessOptions) -> ProcessResult:
             "alignment": "pending",
             "diarization": diarization_status,
             "diarization_provider": options.diarization_provider,
-            "translation": "pending",
+            "translation": translation_status,
+            "translation_provider": options.translate_provider,
+            "translation_target_lang": (
+                options.target_lang if options.translate_provider != "none" else None
+            ),
+            "translation_output": (
+                str(output_dir / "transcript.translated.json")
+                if translated_transcript is not None
+                else None
+            ),
         },
     }
     manifest_path = output_dir / "manifest.json"
@@ -217,10 +252,16 @@ def process_episode(input_path: Path, options: ProcessOptions) -> ProcessResult:
     raw_transcript_path = raw_transcript.write_json(output_dir / "transcript.raw.json")
     speaker_transcript_path = transcript.write_json(output_dir / "transcript.speaker.json")
 
+    subtitle_source = translated_transcript if translated_transcript is not None else transcript
+    if translated_transcript is not None:
+        translated_transcript_path = translated_transcript.write_json(
+            output_dir / "transcript.translated.json"
+        )
+
     subtitle_ass_path = subtitle_dir / "episode.ass"
     subtitle_srt_path = subtitle_dir / "episode.srt"
-    subtitle_ass_path.write_text(segments_to_ass(transcript.segments), encoding="utf-8")
-    subtitle_srt_path.write_text(segments_to_srt(transcript.segments), encoding="utf-8")
+    subtitle_ass_path.write_text(segments_to_ass(subtitle_source.segments), encoding="utf-8")
+    subtitle_srt_path.write_text(segments_to_srt(subtitle_source.segments), encoding="utf-8")
 
     return ProcessResult(
         manifest_path=manifest_path,
@@ -231,6 +272,7 @@ def process_episode(input_path: Path, options: ProcessOptions) -> ProcessResult:
         subtitle_srt_path=subtitle_srt_path,
         audio_path=audio_path,
         asr_audio_path=asr_audio_path,
+        translated_transcript_path=translated_transcript_path,
     )
 
 

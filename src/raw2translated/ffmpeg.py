@@ -92,7 +92,9 @@ def convert_audio(
     return output_path
 
 
-def mux_subtitle(input_path: Path, subtitle_path: Path, output_path: Path, *, overwrite: bool = False) -> Path:
+def mux_subtitle(
+    input_path: Path, subtitle_path: Path, output_path: Path, *, overwrite: bool = False
+) -> Path:
     if not input_path.exists():
         raise FileNotFoundError(input_path)
     if not subtitle_path.exists():

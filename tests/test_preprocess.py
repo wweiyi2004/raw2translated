@@ -2,8 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from raw2translated.preprocess import DemucsAudioPreprocessor, build_audio_preprocessor
-from raw2translated.preprocess import _find_demucs_stem
+from raw2translated.preprocess import DemucsAudioPreprocessor, _find_demucs_stem, build_audio_preprocessor
 
 
 class PreprocessTests(unittest.TestCase):
