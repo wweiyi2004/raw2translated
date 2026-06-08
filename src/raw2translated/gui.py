@@ -69,21 +69,42 @@ class GuiController:
 
     # -- editor ----------------------------------------------------------
 
-    def rows(self) -> list[SegmentRow]:
+    def is_flagged(self, segment: TranscriptSegment, *, confidence_threshold: float | None = None) -> bool:
+        """A segment worth reviewing: untranslated, carrying notes, or low confidence."""
+        if not segment.is_translated:
+            return True
+        if segment.notes:
+            return True
+        if confidence_threshold is not None:
+            for value in (segment.speaker_confidence, segment.asr_confidence):
+                if value is not None and value < confidence_threshold:
+                    return True
+        return False
+
+    def rows(
+        self,
+        *,
+        only_flagged: bool = False,
+        confidence_threshold: float | None = None,
+    ) -> list[SegmentRow]:
         if self.transcript is None:
             return []
-        return [
-            SegmentRow(
-                index=i,
-                start=segment.start,
-                end=segment.end,
-                speaker=segment.display_speaker,
-                source=segment.text_ja,
-                translation=segment.text_zh or "",
-                notes=", ".join(segment.notes),
+        rows: list[SegmentRow] = []
+        for i, segment in enumerate(self.transcript.segments):
+            if only_flagged and not self.is_flagged(segment, confidence_threshold=confidence_threshold):
+                continue
+            rows.append(
+                SegmentRow(
+                    index=i,
+                    start=segment.start,
+                    end=segment.end,
+                    speaker=segment.display_speaker,
+                    source=segment.text_ja,
+                    translation=segment.text_zh or "",
+                    notes=", ".join(segment.notes),
+                )
             )
-            for i, segment in enumerate(self.transcript.segments)
-        ]
+        return rows
 
     def segment(self, index: int) -> TranscriptSegment:
         if self.transcript is None:
@@ -157,6 +178,60 @@ class GuiController:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
         return path
+
+    # -- per-line playback ----------------------------------------------
+
+    def build_play_command(
+        self,
+        index: int,
+        *,
+        player: str = "ffplay",
+        media_path: Path | str | None = None,
+        pad: float = 0.0,
+    ) -> list[str]:
+        """Build an ``ffplay`` command that plays one segment's time range.
+
+        The GUI runs this with :mod:`subprocess`; the command is built here so it
+        can be unit-tested without launching a player.
+        """
+        segment = self.segment(index)
+        media = media_path or (self.transcript.media_path if self.transcript else None)
+        if not media:
+            raise ValueError("no media path is associated with this transcript")
+        start = max(0.0, segment.start - pad)
+        duration = max(0.0, (segment.end - segment.start) + 2 * pad)
+        return [
+            player,
+            "-autoexit",
+            "-ss",
+            f"{start:.3f}",
+            "-t",
+            f"{duration:.3f}",
+            str(media),
+        ]
+
+    # -- mux -------------------------------------------------------------
+
+    def mux(
+        self,
+        subtitle_path: Path,
+        output_path: Path,
+        *,
+        input_path: Path | str | None = None,
+        overwrite: bool = False,
+    ) -> Path:
+        """Mux a subtitle file into the (loaded or given) media container."""
+        from .ffmpeg import mux_subtitle
+
+        media = input_path or (self.transcript.media_path if self.transcript else None)
+        if not media:
+            raise ValueError("no input media to mux into")
+        return mux_subtitle(
+            Path(media),
+            Path(subtitle_path),
+            Path(output_path),
+            overwrite=overwrite,
+        )
 
     # -- process ---------------------------------------------------------
 
@@ -304,6 +379,16 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
     editor_tab = ttk.Frame(notebook)
     notebook.add(editor_tab, text="Editor")
 
+    only_flagged = tk.BooleanVar(value=False)
+    filter_frame = ttk.Frame(editor_tab)
+    filter_frame.pack(fill="x", pady=2)
+    ttk.Checkbutton(
+        filter_frame,
+        text="Only flagged (untranslated / has notes / low confidence)",
+        variable=only_flagged,
+        command=lambda: _refresh_editor(),
+    ).pack(side="left")
+
     columns = ("index", "start", "end", "speaker", "source", "translation", "notes")
     tree = ttk.Treeview(editor_tab, columns=columns, show="headings", height=14)
     widths = {
@@ -322,7 +407,7 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
 
     def _refresh_editor() -> None:
         tree.delete(*tree.get_children())
-        for r in controller.rows():
+        for r in controller.rows(only_flagged=only_flagged.get(), confidence_threshold=0.5):
             tree.insert(
                 "",
                 "end",
@@ -386,8 +471,29 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
         controller.save_transcript(path)
         messagebox.showinfo("raw2translated", f"Saved {path}")
 
+    def _play_selected() -> None:
+        import subprocess
+
+        selection = tree.selection()
+        if not selection:
+            return
+        index = int(selection[0])
+        try:
+            command = controller.build_play_command(index, pad=0.25)
+        except ValueError as exc:
+            messagebox.showinfo("raw2translated", str(exc))
+            return
+        try:
+            subprocess.Popen(command)  # noqa: S603 - command built from local data
+        except FileNotFoundError:
+            messagebox.showerror(
+                "raw2translated",
+                "ffplay was not found. Install ffmpeg (which provides ffplay) to preview audio.",
+            )
+
     ttk.Button(button_frame, text="Open transcript...", command=_open_transcript).pack(side="left")
     ttk.Button(button_frame, text="Save transcript", command=_save_transcript).pack(side="left", padx=4)
+    ttk.Button(button_frame, text="Play selected", command=_play_selected).pack(side="left")
 
     # ---- Export tab ----
     export_tab = ttk.Frame(notebook)
@@ -443,6 +549,40 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
             messagebox.showerror("raw2translated", str(exc))
 
     ttk.Button(export_tab, text="Export subtitle", command=_do_export).pack(anchor="e", pady=4)
+
+    ttk.Separator(export_tab, orient="horizontal").pack(fill="x", pady=8)
+    ttk.Label(export_tab, text="Mux subtitle into a video container (needs ffmpeg):").pack(anchor="w")
+
+    mux_state = {
+        "input": tk.StringVar(),
+        "subtitle": tk.StringVar(),
+        "out": tk.StringVar(value="output/episode.muxed.mkv"),
+    }
+    _row(export_tab, "Input media", mux_state["input"], lambda: _pick_file(mux_state["input"]))
+    _row(export_tab, "Subtitle file", mux_state["subtitle"], lambda: _pick_file(mux_state["subtitle"]))
+    _row(export_tab, "Output file", mux_state["out"])
+
+    def _do_mux() -> None:
+        if not mux_state["subtitle"].get():
+            messagebox.showinfo("raw2translated", "Choose a subtitle file to mux.")
+            return
+        try:
+            out = controller.mux(
+                Path(mux_state["subtitle"].get()),
+                Path(mux_state["out"].get()),
+                input_path=Path(mux_state["input"].get()) if mux_state["input"].get() else None,
+                overwrite=True,
+            )
+            messagebox.showinfo("raw2translated", f"Muxed {out}")
+        except FileNotFoundError:
+            messagebox.showerror(
+                "raw2translated",
+                "ffmpeg or an input file was not found. Install ffmpeg and check the paths.",
+            )
+        except Exception as exc:  # noqa: BLE001 - surface to the user
+            messagebox.showerror("raw2translated", str(exc))
+
+    ttk.Button(export_tab, text="Mux into video", command=_do_mux).pack(anchor="e", pady=4)
 
     _poll_log()
     root.mainloop()

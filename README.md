@@ -55,9 +55,20 @@ GUI 有三个标签页:
 
 - **Process**:选输入视频/输出目录,选 ASR、翻译 provider、目标语言,点按钮跑流水线,日志实时显示。
 - **Editor**:把 transcript JSON 载入表格,逐行查看时间/说话人/原文/译文,手动编辑译文并保存回 JSON。
-- **Export**:选格式(ASS/SRT)和文本模式(原文/译文/双语),一键导出字幕。
+  可勾选 "Only flagged" 只看未翻译/有备注/低置信度的行;选中一行点 "Play selected" 用 ffplay 试听对应片段(需 ffmpeg)。
+- **Export**:选格式(ASS/SRT)和文本模式(原文/译文/双语),一键导出字幕;下方还能把字幕封装(mux)进视频(需 ffmpeg)。
 
 GUI 只是现有 CLI/pipeline 的薄封装,逻辑层(`GuiController`)不依赖 Tkinter,可独立测试。
+
+### 批量处理
+
+把一个目录里的所有媒体文件依次跑流水线,每个文件输出到独立子目录(`out/<文件名>/`):
+
+```powershell
+raw2translated batch .\episodes --out .\output --asr faster-whisper --translate memory --translation-memory .\configs\translation_memory.example.json
+```
+
+单个文件失败不会中断整批;结尾会汇总成功/失败数量。
 
 只安装 ASR 依赖:
 

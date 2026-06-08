@@ -46,6 +46,12 @@ without a large rewrite, building on the existing `cli.py`, `pipeline.py`,
 - **Desktop GUI** (`gui.py`): a Tkinter app with Process / Editor / Export tabs, launched via
   `raw2translated gui`. All logic lives in a Tk-free `GuiController` that is unit-tested
   headless; Tkinter is imported lazily so importing the module never needs a display.
+- **Editor enhancements**: filter the table to only flagged lines (untranslated / has notes /
+  low confidence), per-line `ffplay` preview, and mux a subtitle into a video — all backed by
+  headless-testable `GuiController` methods.
+- **Batch processing**: `raw2translated batch <dir>` (and `pipeline.process_batch`) runs the
+  pipeline over every media file in a directory into per-file output subdirectories, recording
+  per-file failures instead of aborting the whole batch.
 
 ## Still missing / future work
 

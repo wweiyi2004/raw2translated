@@ -10,7 +10,7 @@ from .asr import AsrProviderError
 from .diarization import DiarizationProviderError
 from .ffmpeg import FFmpegError, mux_subtitle, probe_media
 from .models import EpisodeTranscript
-from .pipeline import ProcessOptions, process_episode
+from .pipeline import ProcessOptions, process_batch, process_episode
 from .preprocess import AudioPreprocessError
 from .subtitles import segments_to_ass, segments_to_srt
 from .translation import TranslationError, build_translation_provider
@@ -25,6 +25,8 @@ def main(argv: list[str] | None = None) -> int:
             return _probe(args)
         if args.command == "process":
             return _process(args)
+        if args.command == "batch":
+            return _batch(args)
         if args.command == "gui":
             return _gui(args)
         if args.command == "translate":
@@ -224,6 +226,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Compatibility alias for --text-mode bilingual.",
     )
 
+    batch = subparsers.add_parser("batch", help="Process every media file in a directory.")
+    batch.add_argument("input_dir", type=Path)
+    batch.add_argument("--out", type=Path, default=Path("output"))
+    batch.add_argument("--lang", default="ja")
+    batch.add_argument("--asr", choices=["none", "faster-whisper"], default="none")
+    batch.add_argument(
+        "--translate",
+        dest="translate_provider",
+        choices=["none", "memory", "glossary"],
+        default="none",
+    )
+    batch.add_argument("--translation-memory", type=Path, default=None)
+    batch.add_argument("--glossary", type=Path, default=None)
+    batch.add_argument("--target-lang", default="zh-CN")
+    batch.add_argument("--dry-run", action="store_true")
+    batch.add_argument("--overwrite", action="store_true")
+
     subparsers.add_parser("gui", help="Launch the desktop GUI (Tkinter).")
 
     mux = subparsers.add_parser("mux", help="Mux a subtitle file into a video container.")
@@ -303,6 +322,34 @@ def _process(args: argparse.Namespace) -> int:
     if result.asr_audio_path is not None and result.asr_audio_path != result.audio_path:
         print(f"asr audio: {result.asr_audio_path}")
     return 0
+
+
+def _batch(args: argparse.Namespace) -> int:
+    options = ProcessOptions(
+        output_dir=args.out,
+        language=args.lang,
+        dry_run=args.dry_run,
+        overwrite=args.overwrite,
+        asr_provider=args.asr,
+        translate_provider=args.translate_provider,
+        translation_memory=args.translation_memory,
+        glossary=args.glossary,
+        target_lang=args.target_lang,
+    )
+    items = process_batch(args.input_dir, args.out, options)
+    if not items:
+        print(f"no media files found in {args.input_dir}", file=sys.stderr)
+        return 1
+
+    failures = 0
+    for item in items:
+        if item.error is None:
+            print(f"ok: {item.input_path.name} -> {item.output_dir}")
+        else:
+            failures += 1
+            print(f"failed: {item.input_path.name}: {item.error}", file=sys.stderr)
+    print(f"processed {len(items) - failures}/{len(items)} files")
+    return 0 if failures == 0 else 2
 
 
 def _gui(args: argparse.Namespace) -> int:
