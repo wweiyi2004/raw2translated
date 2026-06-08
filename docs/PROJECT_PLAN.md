@@ -10,13 +10,15 @@ Done:
 - Local-first translation loop: `memory` and `glossary` providers, `transcript.translated.json`.
 - Subtitle export with `original` / `translated` / `bilingual` text modes.
 - ruff config and a light GitHub Actions CI (`dev` extra only).
+- Tkinter desktop GUI (`raw2translated gui`) with Process / Editor / Export tabs — a first
+  cut of the Phase 7 review UI.
 
 Next:
 
 - Forced alignment (WhisperX) for tighter timing — see Phase 3.
 - Character voiceprints — see Phase 5.
 - A real machine-translation provider behind the existing `TranslationProvider` interface.
-- A review/editing UI — see Phase 7.
+- Grow the GUI editor: audio/video playback per line, low-confidence filtering, mux to MKV.
 - Batch processing of multiple episodes.
 
 ## Product Boundary

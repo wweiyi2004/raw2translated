@@ -25,6 +25,8 @@ def main(argv: list[str] | None = None) -> int:
             return _probe(args)
         if args.command == "process":
             return _process(args)
+        if args.command == "gui":
+            return _gui(args)
         if args.command == "translate":
             return _translate(args)
         if args.command == "export-subtitle":
@@ -222,6 +224,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Compatibility alias for --text-mode bilingual.",
     )
 
+    subparsers.add_parser("gui", help="Launch the desktop GUI (Tkinter).")
+
     mux = subparsers.add_parser("mux", help="Mux a subtitle file into a video container.")
     mux.add_argument("input", type=Path)
     mux.add_argument("subtitle", type=Path)
@@ -299,6 +303,15 @@ def _process(args: argparse.Namespace) -> int:
     if result.asr_audio_path is not None and result.asr_audio_path != result.audio_path:
         print(f"asr audio: {result.asr_audio_path}")
     return 0
+
+
+def _gui(args: argparse.Namespace) -> int:
+    try:
+        from .gui import launch
+    except ImportError as exc:  # pragma: no cover - tkinter missing on this build
+        print(f"GUI unavailable (tkinter not installed): {exc}", file=sys.stderr)
+        return 2
+    return launch()
 
 
 def _translate(args: argparse.Namespace) -> int:

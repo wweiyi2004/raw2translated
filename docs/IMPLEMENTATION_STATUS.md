@@ -43,6 +43,9 @@ without a large rewrite, building on the existing `cli.py`, `pipeline.py`,
   `--bilingual` kept as a compatibility alias. Untranslated lines never render `None`.
 - **Engineering**: ruff configuration, a GitHub Actions workflow that installs only the light
   `dev` extra, and refreshed README / PROJECT_PLAN / DATA_MODEL docs.
+- **Desktop GUI** (`gui.py`): a Tkinter app with Process / Editor / Export tabs, launched via
+  `raw2translated gui`. All logic lives in a Tk-free `GuiController` that is unit-tested
+  headless; Tkinter is imported lazily so importing the module never needs a display.
 
 ## Still missing / future work
 

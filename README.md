@@ -43,6 +43,22 @@ raw2translated --help
 raw2translated probe .\input.mkv
 ```
 
+### 图形界面 (GUI)
+
+不想用命令行?启动桌面 GUI(基于 Python 自带的 Tkinter,无需额外依赖):
+
+```powershell
+raw2translated gui
+```
+
+GUI 有三个标签页:
+
+- **Process**:选输入视频/输出目录,选 ASR、翻译 provider、目标语言,点按钮跑流水线,日志实时显示。
+- **Editor**:把 transcript JSON 载入表格,逐行查看时间/说话人/原文/译文,手动编辑译文并保存回 JSON。
+- **Export**:选格式(ASS/SRT)和文本模式(原文/译文/双语),一键导出字幕。
+
+GUI 只是现有 CLI/pipeline 的薄封装,逻辑层(`GuiController`)不依赖 Tkinter,可独立测试。
+
 只安装 ASR 依赖:
 
 ```powershell
@@ -178,7 +194,7 @@ output/
 源码与配置布局:
 
 ```text
-src/raw2translated/    CLI、pipeline 和各 provider
+src/raw2translated/    CLI、pipeline、各 provider 和 Tkinter GUI
 configs/               示例术语表 / 翻译记忆 / 角色 / 字幕样式
 docs/                  项目计划、数据模型、实现状态
 tests/                 不联网的单元测试(mock/fake provider)
