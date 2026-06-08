@@ -1,0 +1,15 @@
+characters:
+  - id: heroine_a
+    name: 女主A
+    aliases:
+      - A酱
+    voiceprints: []
+    style:
+      personality: 傲娇、嘴硬、语速快
+      first_person: 我
+      second_person: 你这家伙
+      catchphrases:
+        べ、別に: 才、才不是
+    subtitle:
+      color: "#ff7aa2"
+

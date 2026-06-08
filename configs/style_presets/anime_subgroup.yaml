@@ -1,0 +1,10 @@
+id: anime-subgroup
+name: Anime Subgroup
+description: Localized Simplified Chinese subtitle style with stable anime terms.
+rules:
+  - Keep subtitles short enough for two-line display.
+  - Preserve recurring names, attacks, organizations, and relationship terms.
+  - Prefer natural spoken Chinese over literal Japanese sentence order.
+  - Keep Japanese honorifics only when the project glossary requires them.
+  - Do not overuse internet slang unless the project explicitly enables it.
+

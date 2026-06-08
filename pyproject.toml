@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "raw2translated"
+version = "0.1.0"
+description = "Local-first anime transcription, speaker attribution, translation, and subtitle pipeline."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "raw2translated contributors" }]
+dependencies = []
+
+[project.optional-dependencies]
+asr = [
+  "faster-whisper",
+]
+diarization = [
+  "pyannote.audio",
+]
+preprocess = [
+  "demucs",
+]
+models = [
+  "demucs",
+  "faster-whisper",
+  "whisperx",
+  "pyannote.audio",
+  "speechbrain",
+]
+subtitle = [
+  "pysubs2",
+]
+dev = [
+  "pytest",
+  "ruff",
+]
+
+[project.scripts]
+raw2translated = "raw2translated.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

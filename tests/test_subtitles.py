@@ -1,0 +1,46 @@
+import unittest
+
+from raw2translated.models import TranscriptSegment
+from raw2translated.subtitles import format_ass_time, format_srt_time, segments_to_ass, segments_to_srt
+
+
+class SubtitleTests(unittest.TestCase):
+    def test_time_formatting(self) -> None:
+        self.assertEqual(format_ass_time(3661.235), "1:01:01.24")
+        self.assertEqual(format_srt_time(3661.235), "01:01:01,235")
+
+    def test_ass_export_contains_dialogue(self) -> None:
+        ass = segments_to_ass(
+            [
+                TranscriptSegment(
+                    start=1,
+                    end=2.5,
+                    speaker="SPEAKER_00",
+                    text_ja="べ、別に",
+                    text_zh="才、才不是",
+                )
+            ],
+            bilingual=True,
+        )
+        self.assertIn("[Events]", ass)
+        self.assertIn("Dialogue: 0,0:00:01.00,0:00:02.50", ass)
+        self.assertIn("才、才不是", ass)
+
+    def test_srt_export(self) -> None:
+        srt = segments_to_srt(
+            [
+                TranscriptSegment(
+                    start=1,
+                    end=2.5,
+                    speaker="SPEAKER_00",
+                    text_ja="何してるの？",
+                )
+            ]
+        )
+        self.assertIn("00:00:01,000 --> 00:00:02,500", srt)
+        self.assertIn("何してるの？", srt)
+
+
+if __name__ == "__main__":
+    unittest.main()
+

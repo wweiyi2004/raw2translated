@@ -1,0 +1,8 @@
+terms:
+  - source: 先輩
+    target: 前辈
+    note: Keep consistent unless character relationship requires 学长/学姐.
+  - source: お兄ちゃん
+    target: 哥哥
+    note: Project may override to 欧尼酱 for stronger anime flavor.
+
