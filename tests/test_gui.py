@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -137,6 +138,39 @@ class ControllerMuxTests(unittest.TestCase):
         controller.set_transcript(EpisodeTranscript(media_path=None, segments=[]))
         with self.assertRaises(ValueError):
             controller.mux(Path("ep.ass"), Path("out.mkv"))
+
+
+class ControllerCharacterTests(unittest.TestCase):
+    def test_apply_characters_from_map(self) -> None:
+        controller = GuiController()
+        controller.set_transcript(
+            EpisodeTranscript(
+                segments=[
+                    TranscriptSegment(start=0, end=1, speaker="SPEAKER_00", text_ja="a"),
+                    TranscriptSegment(start=1, end=2, speaker="SPEAKER_01", text_ja="b"),
+                ]
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "map.json"
+            path.write_text(json.dumps({"SPEAKER_00": "女主A"}), encoding="utf-8")
+            assigned = controller.apply_characters(path)
+        self.assertEqual(assigned, 1)
+        self.assertEqual(controller.segment(0).character, "女主A")
+
+
+class ControllerLLMTranslateTests(unittest.TestCase):
+    def test_run_translate_openai_with_injected_key(self) -> None:
+        controller = GuiController()
+        controller.set_transcript(_transcript())
+        with patch("raw2translated.gui.build_translation_provider") as mock_build:
+            fake = mock_build.return_value
+            fake.translate.side_effect = lambda segments, target_lang="zh-CN": segments
+            controller.run_translate("openai", api_key="sk-test", model="m")
+        mock_build.assert_called_once()
+        _, kwargs = mock_build.call_args
+        self.assertEqual(kwargs["api_key"], "sk-test")
+        self.assertEqual(kwargs["model"], "m")
 
 
 class ControllerProcessTests(unittest.TestCase):

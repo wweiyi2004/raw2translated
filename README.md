@@ -51,11 +51,11 @@ raw2translated probe .\input.mkv
 raw2translated gui
 ```
 
-GUI 有三个标签页:
+GUI 有三个标签页,覆盖完整流水线:
 
-- **Process**:选输入视频/输出目录,选 ASR、翻译 provider、目标语言,点按钮跑流水线,日志实时显示。
+- **Process**:选输入视频/输出目录,选 ASR、强制对齐(alignment)、翻译 provider、说话人→角色映射、目标语言,点按钮在后台跑流水线,日志实时显示。
 - **Editor**:把 transcript JSON 载入表格,逐行查看时间/说话人/原文/译文,手动编辑译文并保存回 JSON。
-  可勾选 "Only flagged" 只看未翻译/有备注/低置信度的行;选中一行点 "Play selected" 用 ffplay 试听对应片段(需 ffmpeg)。
+  可勾选 "Only flagged" 只看未翻译/有备注/低置信度的行;"Load character map" 载入角色映射;选中一行点 "Play selected" 用 ffplay 试听对应片段(需 ffmpeg)。
 - **Export**:选格式(ASS/SRT)和文本模式(原文/译文/双语),一键导出字幕;下方还能把字幕封装(mux)进视频(需 ffmpeg)。
 
 GUI 只是现有 CLI/pipeline 的薄封装,逻辑层(`GuiController`)不依赖 Tkinter,可独立测试。
