@@ -198,6 +198,15 @@ class ModuleImportTests(unittest.TestCase):
         self.assertTrue(hasattr(gui, "GuiController"))
         self.assertTrue(hasattr(gui, "launch"))
 
+    def test_dark_palette_has_required_keys(self) -> None:
+        import raw2translated.gui as gui
+
+        required = {"bg", "surface", "text", "accent", "accent_text", "field", "border"}
+        self.assertTrue(required.issubset(gui.DARK_PALETTE))
+        # Every value is a hex color string.
+        for value in gui.DARK_PALETTE.values():
+            self.assertTrue(value.startswith("#") and len(value) == 7)
+
 
 if __name__ == "__main__":
     unittest.main()

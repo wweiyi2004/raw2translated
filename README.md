@@ -51,6 +51,13 @@ raw2translated probe .\input.mkv
 raw2translated gui
 ```
 
+界面默认是现代深色主题。装上可选的 `sv-ttk` 可获得更接近 Windows 11 原生的外观(未安装时自动回退到自带深色主题):
+
+```powershell
+pip install -e ".[gui]"
+raw2translated gui
+```
+
 GUI 有三个标签页,覆盖完整流水线:
 
 - **Process**:选输入视频/输出目录,选 ASR、强制对齐(alignment)、翻译 provider、说话人→角色映射、目标语言,点按钮在后台跑流水线,日志实时显示。

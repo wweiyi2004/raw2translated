@@ -19,6 +19,26 @@ from .pipeline import ProcessOptions, ProcessResult, process_episode
 from .subtitles import segments_to_ass, segments_to_srt
 from .translation import UNTRANSLATED_NOTE, build_translation_provider
 
+# Dark palette used by the custom fallback theme (when sv-ttk is not installed)
+# and for the plain ``tk`` widgets (e.g. the log Text) that ttk styling can't reach.
+DARK_PALETTE = {
+    "bg": "#1e1e2e",
+    "surface": "#262637",
+    "surface_alt": "#2e2e42",
+    "border": "#3a3a52",
+    "text": "#cdd6f4",
+    "subtext": "#a6adc8",
+    "accent": "#7c5cff",
+    "accent_active": "#9277ff",
+    "accent_text": "#ffffff",
+    "field": "#2a2a3c",
+    "selection": "#3a3358",
+}
+
+UI_FONT = ("Segoe UI", 10)
+UI_FONT_BOLD = ("Segoe UI Semibold", 10)
+UI_FONT_TITLE = ("Segoe UI Semibold", 13)
+
 
 @dataclass
 class SegmentRow:
@@ -264,6 +284,126 @@ class GuiController:
         return result
 
 
+def _install_theme(root) -> str:  # pragma: no cover - requires a display
+    """Apply a modern theme. Prefer sv-ttk (Windows 11 look), else a dark fallback.
+
+    Returns the name of the theme that was applied.
+    """
+    try:
+        import sv_ttk
+
+        sv_ttk.set_theme("dark")
+        return "sv-ttk"
+    except Exception:
+        _apply_dark_theme(root)
+        return "custom-dark"
+
+
+def _apply_dark_theme(root) -> None:  # pragma: no cover - requires a display
+    from tkinter import ttk
+
+    p = DARK_PALETTE
+    root.configure(bg=p["bg"])
+    style = ttk.Style(root)
+    style.theme_use("clam")
+
+    style.configure(".", background=p["bg"], foreground=p["text"], font=UI_FONT)
+    style.configure("TFrame", background=p["bg"])
+    style.configure("TLabel", background=p["bg"], foreground=p["text"])
+    style.configure("Subtle.TLabel", background=p["bg"], foreground=p["subtext"])
+    style.configure("Title.TLabel", background=p["bg"], foreground=p["text"], font=UI_FONT_TITLE)
+
+    style.configure(
+        "TButton",
+        background=p["surface_alt"],
+        foreground=p["text"],
+        bordercolor=p["border"],
+        focuscolor=p["accent"],
+        relief="flat",
+        padding=(12, 7),
+    )
+    style.map(
+        "TButton",
+        background=[("active", p["border"]), ("pressed", p["border"])],
+        foreground=[("disabled", p["subtext"])],
+    )
+    style.configure(
+        "Accent.TButton",
+        background=p["accent"],
+        foreground=p["accent_text"],
+        bordercolor=p["accent"],
+        relief="flat",
+        padding=(14, 8),
+        font=UI_FONT_BOLD,
+    )
+    style.map(
+        "Accent.TButton",
+        background=[("active", p["accent_active"]), ("pressed", p["accent_active"])],
+        foreground=[("disabled", p["subtext"])],
+    )
+
+    style.configure("TNotebook", background=p["bg"], bordercolor=p["bg"], tabmargins=(6, 6, 6, 0))
+    style.configure(
+        "TNotebook.Tab",
+        background=p["bg"],
+        foreground=p["subtext"],
+        padding=(16, 8),
+        borderwidth=0,
+    )
+    style.map(
+        "TNotebook.Tab",
+        background=[("selected", p["surface"])],
+        foreground=[("selected", p["text"])],
+    )
+
+    for widget in ("TEntry", "TCombobox", "TSpinbox"):
+        style.configure(
+            widget,
+            fieldbackground=p["field"],
+            background=p["field"],
+            foreground=p["text"],
+            bordercolor=p["border"],
+            insertcolor=p["text"],
+            arrowcolor=p["subtext"],
+            padding=6,
+        )
+    style.map(
+        "TCombobox",
+        fieldbackground=[("readonly", p["field"])],
+        foreground=[("readonly", p["text"])],
+    )
+
+    style.configure(
+        "TCheckbutton",
+        background=p["bg"],
+        foreground=p["text"],
+        focuscolor=p["accent"],
+    )
+    style.map("TCheckbutton", background=[("active", p["bg"])])
+
+    style.configure("TSeparator", background=p["border"])
+
+    style.configure(
+        "Treeview",
+        background=p["surface"],
+        fieldbackground=p["surface"],
+        foreground=p["text"],
+        bordercolor=p["border"],
+        borderwidth=0,
+        rowheight=26,
+    )
+    style.map("Treeview", background=[("selected", p["selection"])], foreground=[("selected", p["text"])])
+    style.configure(
+        "Treeview.Heading",
+        background=p["surface_alt"],
+        foreground=p["subtext"],
+        relief="flat",
+        font=UI_FONT_BOLD,
+        padding=6,
+    )
+    style.map("Treeview.Heading", background=[("active", p["border"])])
+
+
 def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires a display
     """Build and run the Tkinter window. Returns a process exit code."""
     import queue
@@ -275,16 +415,34 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
 
     root = tk.Tk()
     root.title("raw2translated")
-    root.geometry("960x640")
+    root.geometry("1000x680")
+    root.minsize(820, 560)
+
+    theme = _install_theme(root)
+
+    # Custom style names used below, configured for whichever theme is active.
+    style = ttk.Style(root)
+    style.configure("Title.TLabel", font=UI_FONT_TITLE)
+    style.configure("Subtle.TLabel", font=UI_FONT, foreground=DARK_PALETTE["subtext"])
+
+    header = ttk.Frame(root, padding=(16, 14, 16, 4))
+    header.pack(fill="x")
+    ttk.Label(header, text="raw2translated", style="Title.TLabel").pack(side="left")
+    ttk.Label(
+        header,
+        text="local-first 日语动画转录 · 翻译 · 字幕",
+        style="Subtle.TLabel",
+    ).pack(side="left", padx=12)
 
     notebook = ttk.Notebook(root)
-    notebook.pack(fill="both", expand=True, padx=8, pady=8)
+    notebook.pack(fill="both", expand=True, padx=12, pady=(4, 12))
 
     log_queue: queue.Queue[str] = queue.Queue()
+    log_queue.put(f"theme: {theme}")
 
     # ---- Process tab ----
-    process_tab = ttk.Frame(notebook)
-    notebook.add(process_tab, text="Process")
+    process_tab = ttk.Frame(notebook, padding=16)
+    notebook.add(process_tab, text="  Process  ")
 
     state = {
         "input": tk.StringVar(),
@@ -337,8 +495,22 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
 
     ttk.Checkbutton(process_tab, text="Dry run", variable=state["dry_run"]).pack(anchor="w", pady=2)
 
-    log_text = tk.Text(process_tab, height=10, wrap="word")
-    log_text.pack(fill="both", expand=True, pady=4)
+    log_text = tk.Text(
+        process_tab,
+        height=10,
+        wrap="word",
+        bg=DARK_PALETTE["field"],
+        fg=DARK_PALETTE["text"],
+        insertbackground=DARK_PALETTE["text"],
+        relief="flat",
+        borderwidth=0,
+        highlightthickness=1,
+        highlightbackground=DARK_PALETTE["border"],
+        padx=10,
+        pady=8,
+        font=("Consolas", 9),
+    )
+    log_text.pack(fill="both", expand=True, pady=8)
 
     def _log(message: str) -> None:
         log_text.insert("end", message + "\n")
@@ -352,7 +524,7 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
             pass
         root.after(100, _poll_log)
 
-    run_button = ttk.Button(process_tab, text="Run pipeline")
+    run_button = ttk.Button(process_tab, text="▶  Run pipeline", style="Accent.TButton")
 
     def _run_pipeline() -> None:
         if not state["input"].get():
@@ -391,8 +563,8 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
     run_button.pack(anchor="e")
 
     # ---- Editor tab ----
-    editor_tab = ttk.Frame(notebook)
-    notebook.add(editor_tab, text="Editor")
+    editor_tab = ttk.Frame(notebook, padding=16)
+    notebook.add(editor_tab, text="  Editor  ")
 
     only_flagged = tk.BooleanVar(value=False)
     filter_frame = ttk.Frame(editor_tab)
@@ -462,7 +634,7 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
         tree.selection_set(str(index))
 
     tree.bind("<<TreeviewSelect>>", _on_select)
-    ttk.Button(edit_frame, text="Apply", command=_apply_edit).pack(side="left")
+    ttk.Button(edit_frame, text="Apply", command=_apply_edit, style="Accent.TButton").pack(side="left")
 
     button_frame = ttk.Frame(editor_tab)
     button_frame.pack(fill="x", pady=4)
@@ -527,8 +699,8 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
     ttk.Button(button_frame, text="Play selected", command=_play_selected).pack(side="left", padx=4)
 
     # ---- Export tab ----
-    export_tab = ttk.Frame(notebook)
-    notebook.add(export_tab, text="Export")
+    export_tab = ttk.Frame(notebook, padding=16)
+    notebook.add(export_tab, text="  Export  ")
 
     export_state = {
         "format": tk.StringVar(value="ass"),
@@ -579,7 +751,9 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
         except Exception as exc:  # noqa: BLE001 - surface to the user
             messagebox.showerror("raw2translated", str(exc))
 
-    ttk.Button(export_tab, text="Export subtitle", command=_do_export).pack(anchor="e", pady=4)
+    ttk.Button(export_tab, text="Export subtitle", command=_do_export, style="Accent.TButton").pack(
+        anchor="e", pady=4
+    )
 
     ttk.Separator(export_tab, orient="horizontal").pack(fill="x", pady=8)
     ttk.Label(export_tab, text="Mux subtitle into a video container (needs ffmpeg):").pack(anchor="w")
