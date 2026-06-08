@@ -1,0 +1,7 @@
+{
+  "characters": [
+    { "speaker": "SPEAKER_00", "character": "女主A" },
+    { "speaker": "SPEAKER_01", "character": "男主B" },
+    { "speaker": "SPEAKER_02", "character": "老师" }
+  ]
+}

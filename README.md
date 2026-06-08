@@ -156,6 +156,16 @@ raw2translated process .\input.mkv --out .\output --asr faster-whisper --transla
 
 `manifest.json` 会记录翻译 provider、目标语言和译文输出路径。
 
+### 说话人 → 角色命名
+
+说话人分离产出的是 `SPEAKER_00` 这样的匿名聚类。用一份本地映射把它们绑定成角色名(写入每个 segment 的 `character` 字段,字幕会优先显示角色名):
+
+```powershell
+raw2translated assign-characters .\output\transcript.speaker.json --out .\output\transcript.named.json --map .\configs\characters.example.json
+```
+
+也可以在 `process` / `batch` 阶段用 `--characters .\configs\characters.example.json` 直接应用。未在映射里的说话人保持原样,不会被清空。
+
 ### 双语字幕导出
 
 `export-subtitle` 支持三种文本模式:`original`(只日文)、`translated`(只中文)、`bilingual`(中文在上、日文在下)。

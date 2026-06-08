@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .asr import build_asr_provider
+from .characters import apply_character_map, load_character_map
 from .diarization import (
     SpeakerTurn,
     build_diarization_provider,
@@ -65,6 +66,7 @@ class ProcessOptions:
     translation_memory: Path | None = None
     glossary: Path | None = None
     target_lang: str = "zh-CN"
+    character_map: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -264,6 +266,16 @@ def process_episode(input_path: Path, options: ProcessOptions) -> ProcessResult:
     elif options.dry_run and options.diarization_provider != "none":
         diarization_status = "dry_run"
 
+    character_status = "skipped"
+    if options.character_map is not None:
+        mapping = load_character_map(options.character_map)
+        assigned = apply_character_map(transcript.segments, mapping)
+        character_status = f"assigned:{assigned}"
+        transcript.metadata["characters"] = {
+            "map": str(options.character_map),
+            "assigned": assigned,
+        }
+
     translation_status = "skipped"
     translated_transcript = None
     translated_transcript_path = None
@@ -302,6 +314,7 @@ def process_episode(input_path: Path, options: ProcessOptions) -> ProcessResult:
             "alignment": "pending",
             "diarization": diarization_status,
             "diarization_provider": options.diarization_provider,
+            "characters": character_status,
             "translation": translation_status,
             "translation_provider": options.translate_provider,
             "translation_target_lang": (
