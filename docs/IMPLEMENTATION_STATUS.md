@@ -53,13 +53,19 @@ without a large rewrite, building on the existing `cli.py`, `pipeline.py`,
   pipeline over every media file in a directory into per-file output subdirectories, recording
   per-file failures instead of aborting the whole batch.
 
+- **Real translation backend**: `OpenAITranslationProvider`, an OpenAI-compatible
+  chat-completions provider built on stdlib `urllib` (no new dependency). It is never the
+  default, reads the API key from an env var (never CLI args/manifest), accepts any
+  `--api-base` for local LLM gateways, and injects the glossary into the system prompt. The
+  HTTP transport is injectable so it is unit-tested with no network.
+
 ## Still missing / future work
 
 - Forced alignment (WhisperX) for tighter subtitle timing.
 - Character voiceprints and project-level character binding.
-- A real machine-translation provider (cloud or local LLM) behind the same interface.
-- A review/editing UI.
-- Batch processing of multiple episodes.
+- `openai` translation wired into `process`/`batch` (currently the local providers only;
+  use the standalone `translate` command for the LLM backend).
+- A richer review/editing UI (waveform, word-level timing).
 
 ## Out of scope (explicitly not done)
 

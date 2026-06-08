@@ -7,10 +7,27 @@ from raw2translated.models import TranscriptSegment
 from raw2translated.translation import (
     GlossaryTranslationProvider,
     NullTranslationProvider,
+    OpenAITranslationProvider,
     TranslationError,
     TranslationMemoryProvider,
+    TranslationTransportError,
     build_translation_provider,
 )
+
+
+class _FakeTransport:
+    """Records calls and returns a canned OpenAI-style response."""
+
+    def __init__(self, reply: str = "译文", *, fail: bool = False) -> None:
+        self.reply = reply
+        self.fail = fail
+        self.calls: list[dict] = []
+
+    def __call__(self, url, headers, payload, timeout):
+        self.calls.append({"url": url, "headers": headers, "payload": payload})
+        if self.fail:
+            raise TranslationTransportError("boom")
+        return {"choices": [{"message": {"content": self.reply}}]}
 
 
 def _segments() -> list[TranscriptSegment]:
@@ -75,6 +92,54 @@ class GlossaryProviderTests(unittest.TestCase):
         self.assertIn("untranslated", segments[0].notes)
 
 
+class OpenAIProviderTests(unittest.TestCase):
+    def test_translates_untranslated_lines(self) -> None:
+        transport = _FakeTransport(reply="早上好")
+        provider = OpenAITranslationProvider(api_key="sk-test", transport=transport)
+        segments = [TranscriptSegment(start=0.0, end=1.0, text_ja="おはよう")]
+        provider.translate(segments)
+        self.assertEqual(segments[0].text_zh, "早上好")
+        self.assertTrue(segments[0].metadata["translation"]["translated"])
+        self.assertEqual(len(transport.calls), 1)
+        # The user message carries the source line.
+        messages = transport.calls[0]["payload"]["messages"]
+        self.assertEqual(messages[-1]["content"], "おはよう")
+
+    def test_glossary_is_in_system_prompt(self) -> None:
+        provider = OpenAITranslationProvider(
+            api_key="sk-test",
+            glossary={"先輩": "前辈"},
+            transport=_FakeTransport(),
+        )
+        prompt = provider.system_prompt("zh-CN")
+        self.assertIn("先輩 => 前辈", prompt)
+        self.assertIn("zh-CN", prompt)
+
+    def test_transport_error_keeps_source_and_continues(self) -> None:
+        transport = _FakeTransport(fail=True)
+        provider = OpenAITranslationProvider(api_key="sk-test", transport=transport)
+        segments = [TranscriptSegment(start=0.0, end=1.0, text_ja="おはよう")]
+        provider.translate(segments)
+        self.assertIsNone(segments[0].text_zh)
+        self.assertIn("untranslated", segments[0].notes)
+        self.assertIn("error", segments[0].metadata["translation"])
+
+    def test_already_translated_line_is_skipped(self) -> None:
+        transport = _FakeTransport()
+        provider = OpenAITranslationProvider(api_key="sk-test", transport=transport)
+        segments = [TranscriptSegment(start=0.0, end=1.0, text_ja="おはよう", text_zh="早上好")]
+        provider.translate(segments)
+        self.assertEqual(len(transport.calls), 0)
+
+    def test_unexpected_response_raises(self) -> None:
+        def bad_transport(url, headers, payload, timeout):
+            return {"unexpected": True}
+
+        provider = OpenAITranslationProvider(api_key="sk-test", transport=bad_transport)
+        with self.assertRaises(TranslationError):
+            provider.translate([TranscriptSegment(start=0.0, end=1.0, text_ja="おはよう")])
+
+
 class FactoryTests(unittest.TestCase):
     def test_build_none_returns_null_provider(self) -> None:
         self.assertIsInstance(build_translation_provider("none"), NullTranslationProvider)
@@ -86,6 +151,20 @@ class FactoryTests(unittest.TestCase):
     def test_build_unknown_provider_raises(self) -> None:
         with self.assertRaises(TranslationError):
             build_translation_provider("gpt-9000")
+
+    def test_build_openai_requires_api_key(self) -> None:
+        with self.assertRaises(TranslationError):
+            build_translation_provider("openai")
+
+    def test_build_openai_with_key_and_transport_translates(self) -> None:
+        provider = build_translation_provider(
+            "openai",
+            api_key="sk-test",
+            transport=_FakeTransport(reply="早上好"),
+        )
+        segments = [TranscriptSegment(start=0.0, end=1.0, text_ja="おはよう")]
+        provider.translate(segments)
+        self.assertEqual(segments[0].text_zh, "早上好")
 
     def test_build_memory_from_example_config(self) -> None:
         config = Path(__file__).resolve().parents[1] / "configs" / "translation_memory.example.json"
