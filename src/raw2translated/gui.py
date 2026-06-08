@@ -135,6 +135,9 @@ class GuiController:
         memory_path: Path | None = None,
         glossary_path: Path | None = None,
         target_lang: str = "zh-CN",
+        model: str | None = None,
+        api_base: str | None = None,
+        api_key: str | None = None,
     ) -> tuple[int, int]:
         """Translate the loaded transcript in place. Returns (translated, total)."""
         if self.transcript is None:
@@ -143,6 +146,9 @@ class GuiController:
             provider,
             memory_path=memory_path,
             glossary_path=glossary_path,
+            model=model,
+            api_base=api_base,
+            api_key=api_key,
         )
         self.transcript.segments = translator.translate(
             self.transcript.segments,
@@ -155,6 +161,20 @@ class GuiController:
         total = len(self.transcript.segments)
         translated = sum(1 for s in self.transcript.segments if s.is_translated)
         return translated, total
+
+    # -- character naming ------------------------------------------------
+
+    def apply_characters(self, map_path: Path) -> int:
+        """Apply a speaker -> character map to the loaded transcript.
+
+        Returns the number of segments that were assigned a character.
+        """
+        from .characters import apply_character_map, load_character_map
+
+        if self.transcript is None:
+            raise ValueError("no transcript loaded")
+        mapping = load_character_map(Path(map_path))
+        return apply_character_map(self.transcript.segments, mapping)
 
     # -- subtitle export -------------------------------------------------
 
@@ -270,9 +290,11 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
         "input": tk.StringVar(),
         "output": tk.StringVar(value="output"),
         "asr": tk.StringVar(value="none"),
+        "alignment": tk.StringVar(value="none"),
         "translate": tk.StringVar(value="none"),
         "memory": tk.StringVar(),
         "glossary": tk.StringVar(),
+        "characters": tk.StringVar(),
         "target_lang": tk.StringVar(value="zh-CN"),
         "dry_run": tk.BooleanVar(value=True),
     }
@@ -298,28 +320,19 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
     _row(process_tab, "Input media", state["input"], lambda: _pick_file(state["input"]))
     _row(process_tab, "Output dir", state["output"], lambda: _pick_dir(state["output"]))
 
-    asr_frame = ttk.Frame(process_tab)
-    asr_frame.pack(fill="x", pady=2)
-    ttk.Label(asr_frame, text="ASR", width=16).pack(side="left")
-    ttk.Combobox(
-        asr_frame,
-        textvariable=state["asr"],
-        values=["none", "faster-whisper"],
-        state="readonly",
-    ).pack(side="left")
+    def _combo_row(label: str, var: tk.StringVar, values: list[str]) -> None:
+        frame = ttk.Frame(process_tab)
+        frame.pack(fill="x", pady=2)
+        ttk.Label(frame, text=label, width=16).pack(side="left")
+        ttk.Combobox(frame, textvariable=var, values=values, state="readonly").pack(side="left")
 
-    tr_frame = ttk.Frame(process_tab)
-    tr_frame.pack(fill="x", pady=2)
-    ttk.Label(tr_frame, text="Translate", width=16).pack(side="left")
-    ttk.Combobox(
-        tr_frame,
-        textvariable=state["translate"],
-        values=["none", "memory", "glossary"],
-        state="readonly",
-    ).pack(side="left")
+    _combo_row("ASR", state["asr"], ["none", "faster-whisper"])
+    _combo_row("Alignment", state["alignment"], ["none", "whisperx"])
+    _combo_row("Translate", state["translate"], ["none", "memory", "glossary"])
 
     _row(process_tab, "Translation mem", state["memory"], lambda: _pick_file(state["memory"]))
     _row(process_tab, "Glossary", state["glossary"], lambda: _pick_file(state["glossary"]))
+    _row(process_tab, "Character map", state["characters"], lambda: _pick_file(state["characters"]))
     _row(process_tab, "Target lang", state["target_lang"])
 
     ttk.Checkbutton(process_tab, text="Dry run", variable=state["dry_run"]).pack(anchor="w", pady=2)
@@ -349,9 +362,11 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
             output_dir=Path(state["output"].get() or "output"),
             dry_run=state["dry_run"].get(),
             asr_provider=state["asr"].get(),
+            alignment_provider=state["alignment"].get(),
             translate_provider=state["translate"].get(),
             translation_memory=Path(state["memory"].get()) if state["memory"].get() else None,
             glossary=Path(state["glossary"].get()) if state["glossary"].get() else None,
+            character_map=Path(state["characters"].get()) if state["characters"].get() else None,
             target_lang=state["target_lang"].get() or "zh-CN",
         )
         run_button.config(state="disabled")
@@ -491,9 +506,25 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
                 "ffplay was not found. Install ffmpeg (which provides ffplay) to preview audio.",
             )
 
+    def _load_characters() -> None:
+        if controller.transcript is None:
+            messagebox.showinfo("raw2translated", "Load a transcript first.")
+            return
+        path = filedialog.askopenfilename(filetypes=[("Character map JSON", "*.json"), ("All", "*.*")])
+        if not path:
+            return
+        try:
+            assigned = controller.apply_characters(Path(path))
+        except Exception as exc:  # noqa: BLE001 - surface to the user
+            messagebox.showerror("raw2translated", str(exc))
+            return
+        _refresh_editor()
+        messagebox.showinfo("raw2translated", f"Assigned characters to {assigned} segment(s).")
+
     ttk.Button(button_frame, text="Open transcript...", command=_open_transcript).pack(side="left")
     ttk.Button(button_frame, text="Save transcript", command=_save_transcript).pack(side="left", padx=4)
-    ttk.Button(button_frame, text="Play selected", command=_play_selected).pack(side="left")
+    ttk.Button(button_frame, text="Load character map", command=_load_characters).pack(side="left")
+    ttk.Button(button_frame, text="Play selected", command=_play_selected).pack(side="left", padx=4)
 
     # ---- Export tab ----
     export_tab = ttk.Frame(notebook)
