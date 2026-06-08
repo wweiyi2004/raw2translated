@@ -13,6 +13,7 @@ from .models import EpisodeTranscript
 from .pipeline import ProcessOptions, process_episode
 from .preprocess import AudioPreprocessError
 from .subtitles import segments_to_ass, segments_to_srt
+from .translation import TranslationError, build_translation_provider
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,6 +25,8 @@ def main(argv: list[str] | None = None) -> int:
             return _probe(args)
         if args.command == "process":
             return _process(args)
+        if args.command == "translate":
+            return _translate(args)
         if args.command == "export-subtitle":
             return _export_subtitle(args)
         if args.command == "mux":
@@ -45,6 +48,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except AudioPreprocessError as exc:
         print(f"audio preprocess error: {exc}", file=sys.stderr)
+        return 2
+    except TranslationError as exc:
+        print(f"translation error: {exc}", file=sys.stderr)
         return 2
 
     parser.print_help()
@@ -139,6 +145,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum ASR segment overlap ratio required to assign a speaker.",
     )
     process.add_argument(
+        "--translate",
+        dest="translate_provider",
+        choices=["none", "memory", "glossary"],
+        default="none",
+        help="Local translation provider. Default none keeps the original behavior.",
+    )
+    process.add_argument(
+        "--translation-memory",
+        type=Path,
+        default=None,
+        help="Path to a translation memory JSON file (for --translate memory).",
+    )
+    process.add_argument(
+        "--glossary",
+        type=Path,
+        default=None,
+        help="Path to a glossary JSON file (for --translate glossary).",
+    )
+    process.add_argument(
+        "--target-lang",
+        default="zh-CN",
+        help="Target translation language tag recorded in the transcript and manifest.",
+    )
+    process.add_argument(
         "--dry-run",
         action="store_true",
         help="Create metadata and placeholder transcript files without extracting audio.",
@@ -148,6 +178,32 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Overwrite generated files when they already exist.",
     )
+
+    translate = subparsers.add_parser(
+        "translate",
+        help="Translate a transcript JSON into a translated transcript JSON.",
+    )
+    translate.add_argument("transcript", type=Path)
+    translate.add_argument("--out", type=Path, required=True)
+    translate.add_argument(
+        "--provider",
+        choices=["none", "memory", "glossary"],
+        default="memory",
+        help="Local translation provider.",
+    )
+    translate.add_argument(
+        "--memory",
+        type=Path,
+        default=None,
+        help="Path to a translation memory JSON file (for --provider memory).",
+    )
+    translate.add_argument(
+        "--glossary",
+        type=Path,
+        default=None,
+        help="Path to a glossary JSON file (for --provider glossary).",
+    )
+    translate.add_argument("--target-lang", default="zh-CN")
 
     export = subparsers.add_parser("export-subtitle", help="Export ASS or SRT from transcript JSON.")
     export.add_argument("transcript", type=Path)
@@ -214,6 +270,10 @@ def _process(args: argparse.Namespace) -> int:
             min_speakers=args.min_speakers,
             max_speakers=args.max_speakers,
             speaker_min_overlap=args.speaker_min_overlap,
+            translate_provider=args.translate_provider,
+            translation_memory=args.translation_memory,
+            glossary=args.glossary,
+            target_lang=args.target_lang,
         ),
     )
     print(f"manifest: {result.manifest_path}")
@@ -221,11 +281,31 @@ def _process(args: argparse.Namespace) -> int:
     print(f"speaker transcript: {result.speaker_transcript_path}")
     if result.diarization_path is not None:
         print(f"diarization: {result.diarization_path}")
+    if result.translated_transcript_path is not None:
+        print(f"translated transcript: {result.translated_transcript_path}")
     print(f"subtitles: {result.subtitle_ass_path}, {result.subtitle_srt_path}")
     if result.audio_path is not None:
         print(f"analysis audio: {result.audio_path}")
     if result.asr_audio_path is not None and result.asr_audio_path != result.audio_path:
         print(f"asr audio: {result.asr_audio_path}")
+    return 0
+
+
+def _translate(args: argparse.Namespace) -> int:
+    transcript = EpisodeTranscript.from_json_file(args.transcript)
+    provider = build_translation_provider(
+        args.provider,
+        memory_path=args.memory,
+        glossary_path=args.glossary,
+    )
+    transcript.segments = provider.translate(transcript.segments, target_lang=args.target_lang)
+    transcript.metadata["translation"] = {
+        "provider": args.provider,
+        "target_lang": args.target_lang,
+    }
+    transcript.write_json(args.out)
+    translated = sum(1 for segment in transcript.segments if segment.is_translated)
+    print(f"{args.out} ({translated}/{len(transcript.segments)} segments translated)")
     return 0
 
 
