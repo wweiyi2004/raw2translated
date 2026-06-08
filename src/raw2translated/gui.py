@@ -35,9 +35,12 @@ DARK_PALETTE = {
     "selection": "#3a3358",
 }
 
-UI_FONT = ("Segoe UI", 10)
-UI_FONT_BOLD = ("Segoe UI Semibold", 10)
-UI_FONT_TITLE = ("Segoe UI Semibold", 13)
+# Microsoft YaHei UI renders both Chinese and Latin crisply on Windows.
+UI_FONT = ("Microsoft YaHei UI", 10)
+UI_FONT_BOLD = ("Microsoft YaHei UI", 10, "bold")
+UI_FONT_TITLE = ("Microsoft YaHei UI", 15, "bold")
+UI_FONT_SECTION = ("Microsoft YaHei UI", 11, "bold")
+UI_FONT_MONO = ("Consolas", 10)
 
 
 @dataclass
@@ -284,6 +287,27 @@ class GuiController:
         return result
 
 
+def _enable_dpi_awareness() -> None:  # pragma: no cover - Windows display only
+    """Tell Windows we handle DPI ourselves so text is rendered crisp, not stretched.
+
+    Without this, Windows bitmap-stretches the window on high-DPI screens, which is
+    what makes default Tkinter text look blurry. Must run before ``tk.Tk()``.
+    """
+    import sys
+
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)  # PROCESS_SYSTEM_DPI_AWARE
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+
 def _install_theme(root) -> str:  # pragma: no cover - requires a display
     """Apply a modern theme. Prefer sv-ttk (Windows 11 look), else a dark fallback.
 
@@ -411,12 +435,21 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
 
+    _enable_dpi_awareness()
+
     controller = GuiController()
 
     root = tk.Tk()
     root.title("raw2translated")
-    root.geometry("1000x680")
-    root.minsize(820, 560)
+    root.geometry("1040x720")
+    root.minsize(860, 580)
+
+    # Match Tk's point-to-pixel scaling to the real screen DPI so fonts are crisp
+    # and correctly sized on high-DPI displays.
+    try:
+        root.tk.call("tk", "scaling", root.winfo_fpixels("1i") / 72.0)
+    except Exception:
+        pass
 
     theme = _install_theme(root)
 
@@ -424,25 +457,37 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
     style = ttk.Style(root)
     style.configure("Title.TLabel", font=UI_FONT_TITLE)
     style.configure("Subtle.TLabel", font=UI_FONT, foreground=DARK_PALETTE["subtext"])
+    style.configure("Section.TLabel", font=UI_FONT_SECTION, foreground=DARK_PALETTE["accent"])
+    # Use the CJK-capable font and a comfortable row height for the editor table,
+    # overriding whatever the active theme set.
+    style.configure("Treeview", font=UI_FONT, rowheight=30)
+    style.configure("Treeview.Heading", font=UI_FONT_BOLD)
 
-    header = ttk.Frame(root, padding=(16, 14, 16, 4))
+    def _section(parent, title: str, *, expand: bool = False):
+        """A titled group: a bold heading followed by an indented content frame."""
+        ttk.Label(parent, text=title, style="Section.TLabel").pack(anchor="w", pady=(10, 2))
+        body = ttk.Frame(parent)
+        body.pack(fill="both" if expand else "x", expand=expand, padx=(2, 0))
+        return body
+
+    header = ttk.Frame(root, padding=(20, 16, 20, 6))
     header.pack(fill="x")
     ttk.Label(header, text="raw2translated", style="Title.TLabel").pack(side="left")
     ttk.Label(
         header,
-        text="local-first 日语动画转录 · 翻译 · 字幕",
+        text="本地优先 · 日语动画转录 · 翻译 · 字幕",
         style="Subtle.TLabel",
     ).pack(side="left", padx=12)
 
     notebook = ttk.Notebook(root)
-    notebook.pack(fill="both", expand=True, padx=12, pady=(4, 12))
+    notebook.pack(fill="both", expand=True, padx=16, pady=(4, 16))
 
     log_queue: queue.Queue[str] = queue.Queue()
-    log_queue.put(f"theme: {theme}")
+    log_queue.put(f"主题：{theme}（装 sv-ttk 可获得 Windows 11 风格）")
 
     # ---- Process tab ----
-    process_tab = ttk.Frame(notebook, padding=16)
-    notebook.add(process_tab, text="  Process  ")
+    process_tab = ttk.Frame(notebook, padding=20)
+    notebook.add(process_tab, text="  处理  ")
 
     state = {
         "input": tk.StringVar(),
@@ -469,35 +514,43 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
 
     def _row(parent: ttk.Frame, label: str, var: tk.StringVar, picker=None) -> None:
         frame = ttk.Frame(parent)
-        frame.pack(fill="x", pady=2)
-        ttk.Label(frame, text=label, width=16).pack(side="left")
+        frame.pack(fill="x", pady=3)
+        ttk.Label(frame, text=label, width=12).pack(side="left")
         ttk.Entry(frame, textvariable=var).pack(side="left", fill="x", expand=True)
         if picker is not None:
-            ttk.Button(frame, text="...", width=3, command=picker).pack(side="left", padx=2)
+            ttk.Button(frame, text="浏览…", width=6, command=picker).pack(side="left", padx=(6, 0))
 
-    _row(process_tab, "Input media", state["input"], lambda: _pick_file(state["input"]))
-    _row(process_tab, "Output dir", state["output"], lambda: _pick_dir(state["output"]))
+    def _combo_row(parent: ttk.Frame, label: str, var: tk.StringVar, values: list[str]) -> None:
+        frame = ttk.Frame(parent)
+        frame.pack(fill="x", pady=3)
+        ttk.Label(frame, text=label, width=12).pack(side="left")
+        ttk.Combobox(frame, textvariable=var, values=values, state="readonly", width=22).pack(side="left")
 
-    def _combo_row(label: str, var: tk.StringVar, values: list[str]) -> None:
-        frame = ttk.Frame(process_tab)
-        frame.pack(fill="x", pady=2)
-        ttk.Label(frame, text=label, width=16).pack(side="left")
-        ttk.Combobox(frame, textvariable=var, values=values, state="readonly").pack(side="left")
+    io_box = _section(process_tab, "输入 / 输出")
+    _row(io_box, "输入视频", state["input"], lambda: _pick_file(state["input"]))
+    _row(io_box, "输出目录", state["output"], lambda: _pick_dir(state["output"]))
 
-    _combo_row("ASR", state["asr"], ["none", "faster-whisper"])
-    _combo_row("Alignment", state["alignment"], ["none", "whisperx"])
-    _combo_row("Translate", state["translate"], ["none", "memory", "glossary"])
+    pipe_box = _section(process_tab, "流水线")
+    _combo_row(pipe_box, "语音识别", state["asr"], ["none", "faster-whisper"])
+    _combo_row(pipe_box, "强制对齐", state["alignment"], ["none", "whisperx"])
 
-    _row(process_tab, "Translation mem", state["memory"], lambda: _pick_file(state["memory"]))
-    _row(process_tab, "Glossary", state["glossary"], lambda: _pick_file(state["glossary"]))
-    _row(process_tab, "Character map", state["characters"], lambda: _pick_file(state["characters"]))
-    _row(process_tab, "Target lang", state["target_lang"])
+    tr_box = _section(process_tab, "翻译与角色")
+    _combo_row(tr_box, "翻译方式", state["translate"], ["none", "memory", "glossary"])
+    _row(tr_box, "翻译记忆", state["memory"], lambda: _pick_file(state["memory"]))
+    _row(tr_box, "术语表", state["glossary"], lambda: _pick_file(state["glossary"]))
+    _row(tr_box, "角色映射", state["characters"], lambda: _pick_file(state["characters"]))
+    _row(tr_box, "目标语言", state["target_lang"])
 
-    ttk.Checkbutton(process_tab, text="Dry run", variable=state["dry_run"]).pack(anchor="w", pady=2)
-
-    log_text = tk.Text(
+    ttk.Checkbutton(
         process_tab,
-        height=10,
+        text="空跑（dry run，不解码音频，仅生成占位文件）",
+        variable=state["dry_run"],
+    ).pack(anchor="w", pady=(12, 4))
+
+    log_box = _section(process_tab, "运行日志", expand=True)
+    log_text = tk.Text(
+        log_box,
+        height=9,
         wrap="word",
         bg=DARK_PALETTE["field"],
         fg=DARK_PALETTE["text"],
@@ -508,9 +561,9 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
         highlightbackground=DARK_PALETTE["border"],
         padx=10,
         pady=8,
-        font=("Consolas", 9),
+        font=UI_FONT_MONO,
     )
-    log_text.pack(fill="both", expand=True, pady=8)
+    log_text.pack(fill="both", expand=True)
 
     def _log(message: str) -> None:
         log_text.insert("end", message + "\n")
@@ -524,11 +577,11 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
             pass
         root.after(100, _poll_log)
 
-    run_button = ttk.Button(process_tab, text="▶  Run pipeline", style="Accent.TButton")
+    run_button = ttk.Button(process_tab, text="▶  运行流水线", style="Accent.TButton")
 
     def _run_pipeline() -> None:
         if not state["input"].get():
-            messagebox.showerror("raw2translated", "Please choose an input media file.")
+            messagebox.showerror("raw2translated", "请先选择一个输入视频文件。")
             return
         options = ProcessOptions(
             output_dir=Path(state["output"].get() or "output"),
@@ -542,53 +595,62 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
             target_lang=state["target_lang"].get() or "zh-CN",
         )
         run_button.config(state="disabled")
-        log_queue.put(f"Running pipeline on {state['input'].get()} ...")
+        log_queue.put(f"开始处理：{state['input'].get()} …")
 
         def _worker() -> None:
             try:
                 result = controller.run_process(Path(state["input"].get()), options)
-                log_queue.put(f"manifest: {result.manifest_path}")
+                log_queue.put(f"清单：{result.manifest_path}")
                 if result.translated_transcript_path:
-                    log_queue.put(f"translated: {result.translated_transcript_path}")
-                log_queue.put("Done. Loading transcript into the Editor tab.")
+                    log_queue.put(f"译文转录：{result.translated_transcript_path}")
+                log_queue.put("完成。已把转录载入「字幕编辑」标签页。")
                 root.after(0, _refresh_editor)
             except Exception as exc:  # noqa: BLE001 - surface any failure to the log
-                log_queue.put(f"ERROR: {exc}")
+                log_queue.put(f"错误：{exc}")
             finally:
                 root.after(0, lambda: run_button.config(state="normal"))
 
         threading.Thread(target=_worker, daemon=True).start()
 
     run_button.config(command=_run_pipeline)
-    run_button.pack(anchor="e")
+    run_button.pack(anchor="e", pady=(12, 0))
 
     # ---- Editor tab ----
-    editor_tab = ttk.Frame(notebook, padding=16)
-    notebook.add(editor_tab, text="  Editor  ")
+    editor_tab = ttk.Frame(notebook, padding=20)
+    notebook.add(editor_tab, text="  字幕编辑  ")
 
     only_flagged = tk.BooleanVar(value=False)
     filter_frame = ttk.Frame(editor_tab)
-    filter_frame.pack(fill="x", pady=2)
+    filter_frame.pack(fill="x", pady=(0, 6))
     ttk.Checkbutton(
         filter_frame,
-        text="Only flagged (untranslated / has notes / low confidence)",
+        text="仅显示待处理（未翻译 / 有备注 / 低置信度）",
         variable=only_flagged,
         command=lambda: _refresh_editor(),
     ).pack(side="left")
 
     columns = ("index", "start", "end", "speaker", "source", "translation", "notes")
+    headers = {
+        "index": "#",
+        "start": "开始",
+        "end": "结束",
+        "speaker": "说话人",
+        "source": "原文",
+        "translation": "译文",
+        "notes": "备注",
+    }
     tree = ttk.Treeview(editor_tab, columns=columns, show="headings", height=14)
     widths = {
-        "index": 40,
-        "start": 70,
-        "end": 70,
+        "index": 44,
+        "start": 72,
+        "end": 72,
         "speaker": 110,
-        "source": 260,
-        "translation": 260,
-        "notes": 110,
+        "source": 280,
+        "translation": 280,
+        "notes": 120,
     }
     for col in columns:
-        tree.heading(col, text=col)
+        tree.heading(col, text=headers[col])
         tree.column(col, width=widths[col], anchor="w")
     tree.pack(fill="both", expand=True, pady=4)
 
@@ -611,8 +673,8 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
             )
 
     edit_frame = ttk.Frame(editor_tab)
-    edit_frame.pack(fill="x", pady=4)
-    ttk.Label(edit_frame, text="Translation:").pack(side="left")
+    edit_frame.pack(fill="x", pady=6)
+    ttk.Label(edit_frame, text="译文：").pack(side="left")
     edit_var = tk.StringVar()
     edit_entry = ttk.Entry(edit_frame, textvariable=edit_var)
     edit_entry.pack(side="left", fill="x", expand=True, padx=4)
@@ -634,20 +696,20 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
         tree.selection_set(str(index))
 
     tree.bind("<<TreeviewSelect>>", _on_select)
-    ttk.Button(edit_frame, text="Apply", command=_apply_edit, style="Accent.TButton").pack(side="left")
+    ttk.Button(edit_frame, text="应用", command=_apply_edit, style="Accent.TButton").pack(side="left")
 
     button_frame = ttk.Frame(editor_tab)
     button_frame.pack(fill="x", pady=4)
 
     def _open_transcript() -> None:
-        path = filedialog.askopenfilename(filetypes=[("Transcript JSON", "*.json"), ("All", "*.*")])
+        path = filedialog.askopenfilename(filetypes=[("转录 JSON", "*.json"), ("所有文件", "*.*")])
         if path:
             controller.load_transcript(Path(path))
             _refresh_editor()
 
     def _save_transcript() -> None:
         if controller.transcript is None:
-            messagebox.showinfo("raw2translated", "Load a transcript first.")
+            messagebox.showinfo("raw2translated", "请先载入一个转录文件。")
             return
         path = controller.transcript_path
         if path is None:
@@ -656,7 +718,7 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
                 return
             path = Path(chosen)
         controller.save_transcript(path)
-        messagebox.showinfo("raw2translated", f"Saved {path}")
+        messagebox.showinfo("raw2translated", f"已保存 {path}")
 
     def _play_selected() -> None:
         import subprocess
@@ -675,14 +737,14 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
         except FileNotFoundError:
             messagebox.showerror(
                 "raw2translated",
-                "ffplay was not found. Install ffmpeg (which provides ffplay) to preview audio.",
+                "未找到 ffplay。请安装 ffmpeg（自带 ffplay）以试听音频。",
             )
 
     def _load_characters() -> None:
         if controller.transcript is None:
-            messagebox.showinfo("raw2translated", "Load a transcript first.")
+            messagebox.showinfo("raw2translated", "请先载入一个转录文件。")
             return
-        path = filedialog.askopenfilename(filetypes=[("Character map JSON", "*.json"), ("All", "*.*")])
+        path = filedialog.askopenfilename(filetypes=[("角色映射 JSON", "*.json"), ("所有文件", "*.*")])
         if not path:
             return
         try:
@@ -691,16 +753,16 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
             messagebox.showerror("raw2translated", str(exc))
             return
         _refresh_editor()
-        messagebox.showinfo("raw2translated", f"Assigned characters to {assigned} segment(s).")
+        messagebox.showinfo("raw2translated", f"已为 {assigned} 条字幕分配角色。")
 
-    ttk.Button(button_frame, text="Open transcript...", command=_open_transcript).pack(side="left")
-    ttk.Button(button_frame, text="Save transcript", command=_save_transcript).pack(side="left", padx=4)
-    ttk.Button(button_frame, text="Load character map", command=_load_characters).pack(side="left")
-    ttk.Button(button_frame, text="Play selected", command=_play_selected).pack(side="left", padx=4)
+    ttk.Button(button_frame, text="打开转录…", command=_open_transcript).pack(side="left")
+    ttk.Button(button_frame, text="保存转录", command=_save_transcript).pack(side="left", padx=6)
+    ttk.Button(button_frame, text="载入角色映射", command=_load_characters).pack(side="left")
+    ttk.Button(button_frame, text="试听选中", command=_play_selected).pack(side="left", padx=6)
 
     # ---- Export tab ----
-    export_tab = ttk.Frame(notebook, padding=16)
-    notebook.add(export_tab, text="  Export  ")
+    export_tab = ttk.Frame(notebook, padding=20)
+    notebook.add(export_tab, text="  导出  ")
 
     export_state = {
         "format": tk.StringVar(value="ass"),
@@ -708,25 +770,16 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
         "out": tk.StringVar(value="output/subtitles/episode.ass"),
     }
 
-    fmt_frame = ttk.Frame(export_tab)
-    fmt_frame.pack(fill="x", pady=2)
-    ttk.Label(fmt_frame, text="Format", width=16).pack(side="left")
-    ttk.Combobox(
-        fmt_frame,
-        textvariable=export_state["format"],
-        values=["ass", "srt"],
-        state="readonly",
-    ).pack(side="left")
+    sub_box = _section(export_tab, "导出字幕")
 
-    mode_frame = ttk.Frame(export_tab)
-    mode_frame.pack(fill="x", pady=2)
-    ttk.Label(mode_frame, text="Text mode", width=16).pack(side="left")
-    ttk.Combobox(
-        mode_frame,
-        textvariable=export_state["text_mode"],
-        values=["original", "translated", "bilingual"],
-        state="readonly",
-    ).pack(side="left")
+    def _combo_row_ex(parent, label: str, var: tk.StringVar, values: list[str]) -> None:
+        frame = ttk.Frame(parent)
+        frame.pack(fill="x", pady=3)
+        ttk.Label(frame, text=label, width=12).pack(side="left")
+        ttk.Combobox(frame, textvariable=var, values=values, state="readonly", width=22).pack(side="left")
+
+    _combo_row_ex(sub_box, "格式", export_state["format"], ["ass", "srt"])
+    _combo_row_ex(sub_box, "文本模式", export_state["text_mode"], ["original", "translated", "bilingual"])
 
     def _pick_export_out() -> None:
         chosen = filedialog.asksaveasfilename(
@@ -735,11 +788,11 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
         if chosen:
             export_state["out"].set(chosen)
 
-    _row(export_tab, "Output file", export_state["out"], _pick_export_out)
+    _row(sub_box, "输出文件", export_state["out"], _pick_export_out)
 
     def _do_export() -> None:
         if controller.transcript is None:
-            messagebox.showinfo("raw2translated", "Load or generate a transcript first.")
+            messagebox.showinfo("raw2translated", "请先载入或生成一个转录文件。")
             return
         try:
             out = controller.export_subtitle(
@@ -747,29 +800,33 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
                 fmt=export_state["format"].get(),
                 text_mode=export_state["text_mode"].get(),
             )
-            messagebox.showinfo("raw2translated", f"Exported {out}")
+            messagebox.showinfo("raw2translated", f"已导出 {out}")
         except Exception as exc:  # noqa: BLE001 - surface to the user
             messagebox.showerror("raw2translated", str(exc))
 
-    ttk.Button(export_tab, text="Export subtitle", command=_do_export, style="Accent.TButton").pack(
-        anchor="e", pady=4
+    ttk.Button(sub_box, text="导出字幕", command=_do_export, style="Accent.TButton").pack(
+        anchor="e", pady=(8, 0)
     )
 
-    ttk.Separator(export_tab, orient="horizontal").pack(fill="x", pady=8)
-    ttk.Label(export_tab, text="Mux subtitle into a video container (needs ffmpeg):").pack(anchor="w")
+    mux_box = _section(export_tab, "封装进视频（需 ffmpeg）")
+    ttk.Label(
+        mux_box,
+        text="把字幕轨道封装进视频容器，原视频不重新编码。",
+        style="Subtle.TLabel",
+    ).pack(anchor="w", pady=(0, 4))
 
     mux_state = {
         "input": tk.StringVar(),
         "subtitle": tk.StringVar(),
         "out": tk.StringVar(value="output/episode.muxed.mkv"),
     }
-    _row(export_tab, "Input media", mux_state["input"], lambda: _pick_file(mux_state["input"]))
-    _row(export_tab, "Subtitle file", mux_state["subtitle"], lambda: _pick_file(mux_state["subtitle"]))
-    _row(export_tab, "Output file", mux_state["out"])
+    _row(mux_box, "输入视频", mux_state["input"], lambda: _pick_file(mux_state["input"]))
+    _row(mux_box, "字幕文件", mux_state["subtitle"], lambda: _pick_file(mux_state["subtitle"]))
+    _row(mux_box, "输出文件", mux_state["out"])
 
     def _do_mux() -> None:
         if not mux_state["subtitle"].get():
-            messagebox.showinfo("raw2translated", "Choose a subtitle file to mux.")
+            messagebox.showinfo("raw2translated", "请选择要封装的字幕文件。")
             return
         try:
             out = controller.mux(
@@ -778,16 +835,16 @@ def launch(argv: list[str] | None = None) -> int:  # pragma: no cover - requires
                 input_path=Path(mux_state["input"].get()) if mux_state["input"].get() else None,
                 overwrite=True,
             )
-            messagebox.showinfo("raw2translated", f"Muxed {out}")
+            messagebox.showinfo("raw2translated", f"已封装 {out}")
         except FileNotFoundError:
             messagebox.showerror(
                 "raw2translated",
-                "ffmpeg or an input file was not found. Install ffmpeg and check the paths.",
+                "未找到 ffmpeg 或输入文件。请安装 ffmpeg 并检查路径。",
             )
         except Exception as exc:  # noqa: BLE001 - surface to the user
             messagebox.showerror("raw2translated", str(exc))
 
-    ttk.Button(export_tab, text="Mux into video", command=_do_mux).pack(anchor="e", pady=4)
+    ttk.Button(mux_box, text="封装进视频", command=_do_mux).pack(anchor="e", pady=(8, 0))
 
     _poll_log()
     root.mainloop()
