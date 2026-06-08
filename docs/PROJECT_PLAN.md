@@ -1,5 +1,24 @@
 # Project Plan
 
+## Status Snapshot (2026-06-08)
+
+Done:
+
+- CLI shell: `probe` / `process` / `translate` / `export-subtitle` / `mux`.
+- Transcript data model with `language`, `metadata`, and `schema_version`, backward compatible.
+- `faster-whisper` ASR and `pyannote.audio` diarization behind optional-dependency providers.
+- Local-first translation loop: `memory` and `glossary` providers, `transcript.translated.json`.
+- Subtitle export with `original` / `translated` / `bilingual` text modes.
+- ruff config and a light GitHub Actions CI (`dev` extra only).
+
+Next:
+
+- Forced alignment (WhisperX) for tighter timing — see Phase 3.
+- Character voiceprints — see Phase 5.
+- A real machine-translation provider behind the existing `TranslationProvider` interface.
+- A review/editing UI — see Phase 7.
+- Batch processing of multiple episodes.
+
 ## Product Boundary
 
 First build a local-first subtitle production tool:
