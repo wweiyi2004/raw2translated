@@ -103,14 +103,24 @@ Design rule:
 
 ## Phase 3: Forced Alignment
 
-Planned provider:
+Provider:
 
-- `WhisperX`
+- `WhisperX` (optional dependency `.[align]`), behind the `AlignmentProvider` interface.
 
 Goal:
 
 - improve subtitle start/end timing
 - optionally produce word-level timing for future editing UI
+
+Status:
+
+- alignment provider interface implemented; `process --alignment whisperx` refines ASR timing
+  and stores word timing in segment metadata. Real-model verification still needs the extra + GPU.
+
+```powershell
+pip install -e ".[align]"
+raw2translated process .\episode.mkv --out .\output --asr faster-whisper --alignment whisperx --lang ja
+```
 
 ## Phase 4: Speaker Diarization
 

@@ -59,10 +59,20 @@ without a large rewrite, building on the existing `cli.py`, `pipeline.py`,
   `--api-base` for local LLM gateways, and injects the glossary into the system prompt. The
   HTTP transport is injectable so it is unit-tested with no network.
 
+- **Character naming**: `characters.py` binds diarization clusters (`SPEAKER_00`) to character
+  names via a local JSON map, populating the `character` field. Exposed as the
+  `assign-characters` command and a `process` / `batch` `--characters` option.
+- **Forced alignment**: `alignment.py` adds the alignment provider interface (default `none`,
+  optional WhisperX behind `.[align]`), wired into `process` (`--alignment`). It refines ASR
+  segment start/end and records word timing in segment metadata; the manifest's previously
+  hardcoded `alignment: pending` now reflects real status. The WhisperX backend is imported
+  lazily and unit-tested with fakes (no whisperx, no GPU, no audio).
+
 ## Still missing / future work
 
-- Forced alignment (WhisperX) for tighter subtitle timing.
-- Character voiceprints and project-level character binding.
+- Character *voiceprints* (auto-binding clusters across episodes); the manual character map
+  is implemented, automatic voiceprint matching is not.
+- Real ASR/alignment/diarization verification on a machine with the optional extras + GPU.
 - `openai` translation wired into `process`/`batch` (currently the local providers only;
   use the standalone `translate` command for the LLM backend).
 - A richer review/editing UI (waveform, word-level timing).

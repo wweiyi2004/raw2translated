@@ -6,7 +6,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from .alignment import build_alignment_provider
 from .asr import build_asr_provider
+from .characters import apply_character_map, load_character_map
 from .diarization import (
     SpeakerTurn,
     build_diarization_provider,
@@ -47,6 +49,9 @@ class ProcessOptions:
     vad_filter: bool = True
     beam_size: int = 5
     initial_prompt: str | None = None
+    alignment_provider: str = "none"
+    alignment_model: str = "WAV2VEC2_ASR_LARGE_LV60K_960H"
+    alignment_device: str = "auto"
     preprocess_provider: str = "none"
     preprocess_model: str = "htdemucs"
     preprocess_device: str = "auto"
@@ -65,6 +70,7 @@ class ProcessOptions:
     translation_memory: Path | None = None
     glossary: Path | None = None
     target_lang: str = "zh-CN"
+    character_map: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -227,6 +233,28 @@ def process_episode(input_path: Path, options: ProcessOptions) -> ProcessResult:
         if options.dry_run:
             asr_status = "dry_run"
 
+    alignment_status = "skipped"
+    if asr_audio_path is not None and options.alignment_provider != "none" and transcript.segments:
+        aligner = build_alignment_provider(
+            options.alignment_provider,
+            model=options.alignment_model,
+            device=options.alignment_device,
+        )
+        if aligner is not None:
+            transcript.segments = aligner.align(
+                transcript.segments,
+                asr_audio_path,
+                language=options.language,
+            )
+            alignment_status = "completed"
+            transcript.metadata["alignment"] = {
+                "provider": options.alignment_provider,
+                "model": options.alignment_model,
+                "device": options.alignment_device,
+            }
+    elif options.dry_run and options.alignment_provider != "none":
+        alignment_status = "dry_run"
+
     raw_transcript = copy.deepcopy(transcript)
 
     diarization_status = "skipped"
@@ -264,6 +292,16 @@ def process_episode(input_path: Path, options: ProcessOptions) -> ProcessResult:
     elif options.dry_run and options.diarization_provider != "none":
         diarization_status = "dry_run"
 
+    character_status = "skipped"
+    if options.character_map is not None:
+        mapping = load_character_map(options.character_map)
+        assigned = apply_character_map(transcript.segments, mapping)
+        character_status = f"assigned:{assigned}"
+        transcript.metadata["characters"] = {
+            "map": str(options.character_map),
+            "assigned": assigned,
+        }
+
     translation_status = "skipped"
     translated_transcript = None
     translated_transcript_path = None
@@ -299,9 +337,11 @@ def process_episode(input_path: Path, options: ProcessOptions) -> ProcessResult:
             "preprocess_provider": options.preprocess_provider,
             "asr": asr_status,
             "asr_provider": options.asr_provider,
-            "alignment": "pending",
+            "alignment": alignment_status,
+            "alignment_provider": options.alignment_provider,
             "diarization": diarization_status,
             "diarization_provider": options.diarization_provider,
+            "characters": character_status,
             "translation": translation_status,
             "translation_provider": options.translate_provider,
             "translation_target_lang": (

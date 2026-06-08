@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import __version__
 from .asr import AsrProviderError
+from .characters import CharacterMapError, apply_character_map, load_character_map
 from .diarization import DiarizationProviderError
 from .ffmpeg import FFmpegError, mux_subtitle, probe_media
 from .models import EpisodeTranscript
@@ -32,6 +33,8 @@ def main(argv: list[str] | None = None) -> int:
             return _gui(args)
         if args.command == "translate":
             return _translate(args)
+        if args.command == "assign-characters":
+            return _assign_characters(args)
         if args.command == "export-subtitle":
             return _export_subtitle(args)
         if args.command == "mux":
@@ -56,6 +59,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except TranslationError as exc:
         print(f"translation error: {exc}", file=sys.stderr)
+        return 2
+    except CharacterMapError as exc:
+        print(f"character map error: {exc}", file=sys.stderr)
         return 2
 
     parser.print_help()
@@ -103,6 +109,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--initial-prompt",
         default=None,
         help="Optional Japanese prompt to bias ASR toward names, terms, or anime dialogue.",
+    )
+    process.add_argument(
+        "--alignment",
+        choices=["none", "whisperx"],
+        default="none",
+        help="Optional forced alignment to refine ASR segment timing.",
+    )
+    process.add_argument(
+        "--alignment-model",
+        default="WAV2VEC2_ASR_LARGE_LV60K_960H",
+        help="Alignment model name for the WhisperX provider.",
+    )
+    process.add_argument(
+        "--alignment-device",
+        default="auto",
+        help="Alignment device, for example auto, cpu, or cuda.",
     )
     process.add_argument(
         "--preprocess",
@@ -174,6 +196,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target translation language tag recorded in the transcript and manifest.",
     )
     process.add_argument(
+        "--characters",
+        type=Path,
+        default=None,
+        help="Path to a {speaker: character} JSON map applied after diarization.",
+    )
+    process.add_argument(
         "--dry-run",
         action="store_true",
         help="Create metadata and placeholder transcript files without extracting audio.",
@@ -208,6 +236,20 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to a glossary JSON file (for --provider glossary, or to bias --provider openai).",
     )
+    assign = subparsers.add_parser(
+        "assign-characters",
+        help="Bind diarization speaker clusters to character names in a transcript.",
+    )
+    assign.add_argument("transcript", type=Path)
+    assign.add_argument("--out", type=Path, required=True)
+    assign.add_argument(
+        "--map",
+        dest="character_map",
+        type=Path,
+        required=True,
+        help="Path to a {speaker: character} JSON map.",
+    )
+
     translate.add_argument("--target-lang", default="zh-CN")
     translate.add_argument("--model", default=None, help="Model name for --provider openai.")
     translate.add_argument(
@@ -252,6 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--translation-memory", type=Path, default=None)
     batch.add_argument("--glossary", type=Path, default=None)
     batch.add_argument("--target-lang", default="zh-CN")
+    batch.add_argument("--characters", type=Path, default=None)
     batch.add_argument("--dry-run", action="store_true")
     batch.add_argument("--overwrite", action="store_true")
 
@@ -301,6 +344,9 @@ def _process(args: argparse.Namespace) -> int:
             vad_filter=args.vad_filter,
             beam_size=args.beam_size,
             initial_prompt=args.initial_prompt,
+            alignment_provider=args.alignment,
+            alignment_model=args.alignment_model,
+            alignment_device=args.alignment_device,
             preprocess_provider=args.preprocess,
             preprocess_model=args.preprocess_model,
             preprocess_device=args.preprocess_device,
@@ -319,6 +365,7 @@ def _process(args: argparse.Namespace) -> int:
             translation_memory=args.translation_memory,
             glossary=args.glossary,
             target_lang=args.target_lang,
+            character_map=args.characters,
         ),
     )
     print(f"manifest: {result.manifest_path}")
@@ -347,6 +394,7 @@ def _batch(args: argparse.Namespace) -> int:
         translation_memory=args.translation_memory,
         glossary=args.glossary,
         target_lang=args.target_lang,
+        character_map=args.characters,
     )
     items = process_batch(args.input_dir, args.out, options)
     if not items:
@@ -392,6 +440,15 @@ def _translate(args: argparse.Namespace) -> int:
     transcript.write_json(args.out)
     translated = sum(1 for segment in transcript.segments if segment.is_translated)
     print(f"{args.out} ({translated}/{len(transcript.segments)} segments translated)")
+    return 0
+
+
+def _assign_characters(args: argparse.Namespace) -> int:
+    transcript = EpisodeTranscript.from_json_file(args.transcript)
+    mapping = load_character_map(args.character_map)
+    assigned = apply_character_map(transcript.segments, mapping)
+    transcript.write_json(args.out)
+    print(f"{args.out} ({assigned}/{len(transcript.segments)} segments assigned a character)")
     return 0
 
 
