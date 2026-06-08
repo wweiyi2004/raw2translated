@@ -15,6 +15,9 @@ dependencies = []
 asr = [
   "faster-whisper",
 ]
+align = [
+  "whisperx",
+]
 diarization = [
   "pyannote.audio",
 ]

@@ -111,6 +111,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional Japanese prompt to bias ASR toward names, terms, or anime dialogue.",
     )
     process.add_argument(
+        "--alignment",
+        choices=["none", "whisperx"],
+        default="none",
+        help="Optional forced alignment to refine ASR segment timing.",
+    )
+    process.add_argument(
+        "--alignment-model",
+        default="WAV2VEC2_ASR_LARGE_LV60K_960H",
+        help="Alignment model name for the WhisperX provider.",
+    )
+    process.add_argument(
+        "--alignment-device",
+        default="auto",
+        help="Alignment device, for example auto, cpu, or cuda.",
+    )
+    process.add_argument(
         "--preprocess",
         choices=["none", "demucs"],
         default="none",
@@ -328,6 +344,9 @@ def _process(args: argparse.Namespace) -> int:
             vad_filter=args.vad_filter,
             beam_size=args.beam_size,
             initial_prompt=args.initial_prompt,
+            alignment_provider=args.alignment,
+            alignment_model=args.alignment_model,
+            alignment_device=args.alignment_device,
             preprocess_provider=args.preprocess,
             preprocess_model=args.preprocess_model,
             preprocess_device=args.preprocess_device,
