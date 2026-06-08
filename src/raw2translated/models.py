@@ -5,6 +5,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+SCHEMA_VERSION = 1
+
 
 @dataclass
 class TranscriptSegment:
@@ -14,9 +16,11 @@ class TranscriptSegment:
     character: str | None = None
     text_ja: str = ""
     text_zh: str | None = None
+    language: str = "ja"
     speaker_confidence: float | None = None
     asr_confidence: float | None = None
     notes: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.start = float(self.start)
@@ -28,6 +32,20 @@ class TranscriptSegment:
     def display_speaker(self) -> str:
         return self.character or self.speaker
 
+    @property
+    def source_text(self) -> str:
+        """The original-language text for this segment."""
+        return self.text_ja
+
+    @property
+    def translated_text(self) -> str | None:
+        """The target-language translation, or None if not translated yet."""
+        return self.text_zh
+
+    @property
+    def is_translated(self) -> bool:
+        return bool(self.text_zh)
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TranscriptSegment":
         return cls(
@@ -37,9 +55,11 @@ class TranscriptSegment:
             character=data.get("character"),
             text_ja=data.get("text_ja", ""),
             text_zh=data.get("text_zh"),
+            language=data.get("language", "ja"),
             speaker_confidence=data.get("speaker_confidence"),
             asr_confidence=data.get("asr_confidence"),
             notes=list(data.get("notes", [])),
+            metadata=dict(data.get("metadata", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -52,6 +72,7 @@ class EpisodeTranscript:
     language: str = "ja"
     segments: list[TranscriptSegment] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    schema_version: int = SCHEMA_VERSION
 
     @classmethod
     def empty(cls, *, media_path: Path | None = None, language: str = "ja") -> "EpisodeTranscript":
@@ -64,6 +85,7 @@ class EpisodeTranscript:
             language=data.get("language", "ja"),
             segments=[TranscriptSegment.from_dict(item) for item in data.get("segments", [])],
             metadata=dict(data.get("metadata", {})),
+            schema_version=int(data.get("schema_version", SCHEMA_VERSION)),
         )
 
     @classmethod
@@ -73,6 +95,7 @@ class EpisodeTranscript:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": self.schema_version,
             "media_path": self.media_path,
             "language": self.language,
             "segments": [segment.to_dict() for segment in self.segments],

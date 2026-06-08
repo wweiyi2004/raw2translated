@@ -4,6 +4,7 @@ The transcript JSON is the central interchange format.
 
 ```json
 {
+  "schema_version": 1,
   "media_path": "episode.mkv",
   "language": "ja",
   "segments": [
@@ -14,9 +15,11 @@ The transcript JSON is the central interchange format.
       "character": "女主A",
       "text_ja": "何してるの？",
       "text_zh": "你在干什么？",
+      "language": "ja",
       "speaker_confidence": 0.82,
       "asr_confidence": 0.91,
-      "notes": []
+      "notes": [],
+      "metadata": {}
     }
   ],
   "metadata": {}
@@ -25,13 +28,29 @@ The transcript JSON is the central interchange format.
 
 ## Field Notes
 
+- `schema_version` is the transcript format version. It defaults to `1` and is filled in
+  automatically when an older transcript without the field is loaded.
 - `speaker` is the diarization cluster name for the current episode.
 - `character` is the project-level character identity, set manually or by voiceprint matching.
-- `text_ja` should be the Japanese transcript after ASR and alignment.
-- `text_zh` should be the final subtitle translation after glossary and style passes.
+- `text_ja` is the source (Japanese) transcript after ASR and alignment. It is exposed in code
+  as `TranscriptSegment.source_text`.
+- `text_zh` is the target-language translation after glossary and style passes. It is exposed in
+  code as `TranscriptSegment.translated_text` and is `null` until translation runs.
+- `language` is the source language of the segment text (`ja` by default).
 - `speaker_confidence` is confidence in speaker or character attribution.
 - `asr_confidence` is confidence in the Japanese text.
 - `notes` can track warnings such as overlapping speech, uncertain translation, or noisy audio.
+  For example a line that was not matched by any translation rule is tagged `untranslated`.
+- `metadata` is a free-form per-segment map; the translation step records details such as the
+  provider name and target language here.
+
+## Backward compatibility
+
+Old `transcript.raw.json` and `transcript.speaker.json` files written before
+`schema_version`, per-segment `language`, and per-segment `metadata` existed still load
+correctly: missing fields fall back to their defaults (`schema_version = 1`,
+`language = "ja"`, `metadata = {}`, `text_zh = null`). A round-trip
+(object -> JSON -> object) preserves every field.
 
 ## Local Learning
 
