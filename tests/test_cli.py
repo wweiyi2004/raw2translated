@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from raw2translated.cli import build_parser, main
 from raw2translated.models import EpisodeTranscript, TranscriptSegment
@@ -76,6 +77,55 @@ class TranslateCommandTests(unittest.TestCase):
             out = Path(tmp) / "o.json"
             code = main(["translate", str(Path(tmp) / "nope.json"), "--out", str(out), "--provider", "none"])
         self.assertEqual(code, 2)
+
+    def test_translate_openai_without_key_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            src = root / "transcript.json"
+            _write_transcript(src)
+            # Use an env var name that is guaranteed unset so no key is found.
+            code = main(
+                [
+                    "translate",
+                    str(src),
+                    "--out",
+                    str(root / "o.json"),
+                    "--provider",
+                    "openai",
+                    "--api-key-env",
+                    "R2T_DEFINITELY_UNSET_KEY",
+                ]
+            )
+        self.assertEqual(code, 2)
+
+    def test_translate_openai_success_with_patched_provider(self) -> None:
+        class FakeProvider:
+            def translate(self, segments, *, target_lang="zh-CN"):
+                for s in segments:
+                    s.text_zh = "译文"
+                return segments
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            src = root / "transcript.json"
+            out = root / "out.json"
+            _write_transcript(src)
+            with patch("raw2translated.cli.build_translation_provider", return_value=FakeProvider()):
+                code = main(
+                    [
+                        "translate",
+                        str(src),
+                        "--out",
+                        str(out),
+                        "--provider",
+                        "openai",
+                        "--api-key-env",
+                        "R2T_DEFINITELY_UNSET_KEY",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            data = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(data["segments"][0]["text_zh"], "译文")
 
 
 class ProcessTranslateTests(unittest.TestCase):

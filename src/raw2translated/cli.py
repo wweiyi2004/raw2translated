@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -191,9 +192,9 @@ def build_parser() -> argparse.ArgumentParser:
     translate.add_argument("--out", type=Path, required=True)
     translate.add_argument(
         "--provider",
-        choices=["none", "memory", "glossary"],
+        choices=["none", "memory", "glossary", "openai"],
         default="memory",
-        help="Local translation provider.",
+        help="Translation provider. 'openai' uses an OpenAI-compatible API; the rest are local.",
     )
     translate.add_argument(
         "--memory",
@@ -205,9 +206,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--glossary",
         type=Path,
         default=None,
-        help="Path to a glossary JSON file (for --provider glossary).",
+        help="Path to a glossary JSON file (for --provider glossary, or to bias --provider openai).",
     )
     translate.add_argument("--target-lang", default="zh-CN")
+    translate.add_argument("--model", default=None, help="Model name for --provider openai.")
+    translate.add_argument(
+        "--api-base",
+        default=None,
+        help="OpenAI-compatible API base URL for --provider openai.",
+    )
+    translate.add_argument(
+        "--api-key-env",
+        default="OPENAI_API_KEY",
+        help="Environment variable holding the API key for --provider openai.",
+    )
 
     export = subparsers.add_parser("export-subtitle", help="Export ASS or SRT from transcript JSON.")
     export.add_argument("transcript", type=Path)
@@ -363,10 +375,14 @@ def _gui(args: argparse.Namespace) -> int:
 
 def _translate(args: argparse.Namespace) -> int:
     transcript = EpisodeTranscript.from_json_file(args.transcript)
+    api_key = os.environ.get(args.api_key_env) if args.provider == "openai" else None
     provider = build_translation_provider(
         args.provider,
         memory_path=args.memory,
         glossary_path=args.glossary,
+        model=args.model,
+        api_base=args.api_base,
+        api_key=api_key,
     )
     transcript.segments = provider.translate(transcript.segments, target_lang=args.target_lang)
     transcript.metadata["translation"] = {

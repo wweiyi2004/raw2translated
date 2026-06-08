@@ -137,6 +137,17 @@ raw2translated process .\input.mkv --out .\output --asr faster-whisper --asr-mod
 raw2translated translate .\output\transcript.speaker.json --out .\output\transcript.translated.json --provider memory --memory .\configs\translation_memory.example.json
 ```
 
+需要真实机器翻译时,可用 `openai` provider(OpenAI 兼容接口,仅标准库 `urllib`,无新依赖)。
+API key 从环境变量读取(默认 `OPENAI_API_KEY`),不会写进命令行参数或 manifest:
+
+```powershell
+$env:OPENAI_API_KEY="sk-..."
+raw2translated translate .\output\transcript.speaker.json --out .\output\transcript.translated.json --provider openai --model gpt-4o-mini --glossary .\configs\glossary.example.json
+```
+
+可用 `--api-base` 指向任意 OpenAI 兼容服务(例如本地 LLM 网关),从而保持 local-first。
+`--glossary` 会作为术语约束注入系统提示。翻译失败的行保留原文并标记 `untranslated`,不会中断整批。
+
 也可以在 `process` 阶段一并翻译(默认 `--translate none`,不改变旧行为):
 
 ```powershell
